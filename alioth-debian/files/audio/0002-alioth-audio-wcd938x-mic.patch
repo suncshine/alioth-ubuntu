@@ -1,0 +1,167 @@
+--- a/arch/arm64/boot/dts/qcom/sm8250-xiaomi-alioth.dts
++++ b/arch/arm64/boot/dts/qcom/sm8250-xiaomi-alioth.dts
+@@ -40,6 +40,29 @@
+ 
+ 	aliases {
+ 		serial0 = &uart6;
++	};
++
++	wcd938x: audio-codec {
++		compatible = "qcom,wcd9380-codec";
++
++		reset-gpios = <&tlmm 32 GPIO_ACTIVE_LOW>;
++
++		vdd-buck-supply = <&vreg_s4a_1p8>;
++		vdd-rxtx-supply = <&vreg_s4a_1p8>;
++		vdd-io-supply = <&vreg_s4a_1p8>;
++		vdd-mic-bias-supply = <&vreg_bob>;
++
++		qcom,micbias1-microvolt = <2750000>;
++		qcom,micbias2-microvolt = <2750000>;
++		qcom,micbias3-microvolt = <2750000>;
++		qcom,micbias4-microvolt = <2750000>;
++		qcom,mbhc-buttons-vthreshold-microvolt = <75000 150000 237000 500000 500000 500000 500000 500000>;
++		qcom,mbhc-headset-vthreshold-microvolt = <1700000>;
++		qcom,mbhc-headphone-vthreshold-microvolt = <50000>;
++		qcom,rx-device = <&wcd_rx>;
++		qcom,tx-device = <&wcd_tx>;
++
++		#sound-dai-cells = <1>;
+ 	};
+ 
+ 	chosen {
+@@ -1124,24 +1147,68 @@
+ 
+ &q6asmdai {
+ 	dai@0 {
+-		reg = <0>;
++		reg = <MSM_FRONTEND_DAI_MULTIMEDIA1>;
+ 	};
++
++	dai@1 {
++		reg = <MSM_FRONTEND_DAI_MULTIMEDIA2>;
++	};
+ };
+ 
+ &vamacro {
+-	status = "disabled";
++	vdd-micb-supply = <&vreg_s4a_1p8>;
++	qcom,dmic-sample-rate = <4800000>;
++	status = "okay";
+ };
+ 
+ &lpass_tlmm {
+-	status = "disabled";
++	status = "okay";
+ };
+ 
++&rxmacro {
++	status = "okay";
++};
++
++&txmacro {
++	status = "okay";
++};
++
++&swr1 {
++	status = "okay";
++
++	wcd_rx: wcd9380-rx@0,4 {
++		compatible = "sdw20217010d00";
++		reg = <0 4>;
++		qcom,rx-port-mapping = <1 2 3 4 5>;
++	};
++};
++
++&swr2 {
++	status = "okay";
++
++	wcd_tx: wcd9380-tx@0,3 {
++		compatible = "sdw20217010d00";
++		reg = <0 3>;
++		qcom,tx-port-mapping = <2 3 4 5>;
++	};
++};
++
+ &sound {
+ 	compatible = "qcom,sm8250-sndcard";
+ 	model = "xiaomi-alioth";
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&tert_tdm_active>;
+ 
++	audio-routing =
++		"AMIC1", "MIC BIAS1",
++		"AMIC3", "MIC BIAS3",
++		"AMIC4", "MIC BIAS3",
++		"AMIC5", "MIC BIAS4",
++		"TX SWR_ADC0", "ADC1_OUTPUT",
++		"TX SWR_ADC1", "ADC2_OUTPUT",
++		"TX SWR_ADC2", "ADC3_OUTPUT",
++		"TX SWR_ADC3", "ADC4_OUTPUT";
++
+ 	mm1-dai-link {
+ 		link-name = "MultiMedia1";
+ 
+@@ -1150,6 +1217,13 @@
+ 		};
+ 	};
+ 
++	mm2-dai-link {
++		link-name = "MultiMedia2";
++
++		cpu {
++			sound-dai = <&q6asmdai MSM_FRONTEND_DAI_MULTIMEDIA2>;
++		};
++	};
+ 	speaker-dai-link {
+ 		link-name = "Tertiary TDM Playback";
+ 
+@@ -1163,8 +1237,40 @@
+ 
+ 		codec {
+ 			sound-dai = <&cs35l41_rcv 0>, <&cs35l41_lcv 0>;
++		};
++	};
++
++	wcd-playback-dai-link {
++		link-name = "WCD Playback";
++
++		cpu {
++			sound-dai = <&q6afedai RX_CODEC_DMA_RX_0>;
+ 		};
++
++		codec {
++			sound-dai = <&wcd938x 0>, <&swr1 0>, <&rxmacro 0>;
++		};
++
++		platform {
++			sound-dai = <&q6routing>;
++		};
+ 	};
++
++	wcd-capture-dai-link {
++		link-name = "WCD Capture";
++
++		cpu {
++			sound-dai = <&q6afedai TX_CODEC_DMA_TX_3>;
++		};
++
++		codec {
++			sound-dai = <&wcd938x 1>, <&swr2 0>, <&txmacro 0>;
++		};
++
++		platform {
++			sound-dai = <&q6routing>;
++		};
++	};
+ };
+ 
+ &slpi {
+@@ -1353,6 +1459,7 @@
+ 
+ 	bluetooth {
+ 		compatible = "qcom,qca6390-bt";
++		local-bd-address = [9a 78 56 34 12 02];
+ 		pinctrl-names = "default";
+ 		pinctrl-0 = <&sw_ctrl>;
+ 		swctrl-gpios = <&tlmm 124 GPIO_ACTIVE_HIGH>;

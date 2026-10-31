@@ -42,6 +42,8 @@ ldconfig
 
 install -Dm755 "$WORK/usr/local/bin/ssccli" /usr/local/bin/ssccli
 install -Dm755 "$WORK/usr/local/bin/monitor-sensor" /usr/local/bin/monitor-sensor
+# Readiness gate: SSC discovery in iio-sensor-proxy does not retry.
+install -Dm755 "$(dirname "$0")/ssc-wait" /usr/local/bin/ssc-wait
 
 # Keep the distro iio-sensor-proxy binary untouched; run ours via drop-in.
 install -Dm755 "$WORK/usr/local/libexec/iio-sensor-proxy" \
@@ -66,9 +68,15 @@ EOF
 
 mkdir -p /etc/systemd/system/iio-sensor-proxy.service.d
 cat > /etc/systemd/system/iio-sensor-proxy.service.d/ssc-alioth.conf <<'EOF'
+[Unit]
+Wants=hexagonrpcd.service
+After=hexagonrpcd.service
+
 [Service]
 ExecStart=
 ExecStart=/usr/local/libexec/iio-sensor-proxy
+# Wait for SLPI's sensor_process / SNS service before SSC discovery.
+ExecStartPre=/usr/local/bin/ssc-wait
 RestrictAddressFamilies=AF_UNIX AF_LOCAL AF_NETLINK AF_QIPCRTR
 EOF
 

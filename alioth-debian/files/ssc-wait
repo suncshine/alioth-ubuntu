@@ -1,0 +1,20 @@
+#!/bin/sh
+# Wait until the Qualcomm Sensor Core accelerometer can actually be opened.
+#
+# On cold boot the FastRPC misc device appears before hexagonrpcd has served
+# the SLPI sensor registry and before the SNS/SSC service is advertised over
+# QRTR. iio-sensor-proxy's SSC discovery does not retry, so starting it too
+# early leaves the proxy alive with no sensors. This gate is used as
+# ExecStartPre= for iio-sensor-proxy.service.
+#
+# Exit 0 on success or after the timeout: never block the proxy forever.
+i=0
+while [ "$i" -lt 40 ]; do
+	if timeout 3 ssccli --sensor accelerometer --timeout 1 >/dev/null 2>&1; then
+		exit 0
+	fi
+	sleep 1
+	i=$((i + 1))
+done
+echo "ssc-wait: SSC accelerometer not ready after 40s" >&2
+exit 0

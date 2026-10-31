@@ -1,0 +1,12 @@
+[Unit]
+Description=USB NCM gadget network (rescue SSH path)
+After=systemd-modules-load.service
+Wants=systemd-modules-load.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/usb-gadget
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

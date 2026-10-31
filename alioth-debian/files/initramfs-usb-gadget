@@ -1,0 +1,58 @@
+#!/bin/sh
+# init-premount: create the USB NCM + ACM gadget before dropbear starts.
+# Gives the host 172.16.42.1 over the data cable even if the rootfs never mounts.
+PREREQ="udev"
+prereqs() { echo "$PREREQ"; }
+case "$1" in
+    prereqs) prereqs; exit 0 ;;
+esac
+
+CONFIGFS=/sys/kernel/config/usb_gadget
+GADGET=g1
+
+modprobe libcomposite 2>/dev/null || true
+mkdir -p /sys/kernel/config
+[ -d "$CONFIGFS" ] || mount -t configfs none /sys/kernel/config 2>/dev/null || true
+[ -d "$CONFIGFS" ] || exit 0
+
+if [ ! -d "$CONFIGFS/$GADGET" ]; then
+    mkdir "$CONFIGFS/$GADGET" || exit 0
+    cd "$CONFIGFS/$GADGET" || exit 0
+    echo 0x0525 > idVendor
+    echo 0xa4a2 > idProduct
+    mkdir -p strings/0x409
+    echo "alioth-initramfs" > strings/0x409/serialnumber
+    echo "Xiaomi" > strings/0x409/manufacturer
+    echo "alioth rescue" > strings/0x409/product
+    mkdir -p configs/c.1
+    echo 250 > configs/c.1/MaxPower
+    mkdir -p functions/ncm.usb0 functions/acm.usb0
+    ln -s functions/ncm.usb0 configs/c.1/
+    ln -s functions/acm.usb0 configs/c.1/
+
+    # the UDC can take a moment to register; this busybox has no `head`,
+    # so pick the first entry with a glob (and don't trip on a missing match)
+    i=0
+    UDC=""
+    while [ "$i" -lt 20 ]; do
+        for u in /sys/class/udc/*; do
+            [ -e "$u" ] || continue
+            UDC="${u##*/}"
+            break
+        done
+        [ -n "$UDC" ] && break
+        sleep 1
+        i=$((i + 1))
+    done
+    if [ -n "$UDC" ]; then
+        echo "$UDC" > UDC
+        echo "usb-gadget: bound $UDC" > /dev/kmsg 2>/dev/null || true
+    else
+        echo "usb-gadget: no UDC found" > /dev/kmsg 2>/dev/null || true
+    fi
+fi
+
+ip link set usb0 down 2>/dev/null || true
+ip addr flush dev usb0 2>/dev/null || true
+ip addr add 172.16.42.1/24 dev usb0 2>/dev/null || true
+ip link set usb0 up 2>/dev/null || true

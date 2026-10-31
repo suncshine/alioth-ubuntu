@@ -1,0 +1,17 @@
+[Unit]
+Description=alioth power key (short press screen toggle, long press shutdown dialog)
+After=user@1000.service
+
+[Service]
+Type=simple
+User=user
+SupplementaryGroups=input
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+ExecStart=/usr/local/sbin/alioth-powerkey
+Restart=always
+RestartSec=2
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,6 @@
+# Modules needed by the USB rescue gadget inside the initramfs.
+libcomposite
+usb_f_ncm
+usb_f_acm
+u_ether
+u_serial

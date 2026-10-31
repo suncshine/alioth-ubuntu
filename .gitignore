@@ -1,0 +1,16 @@
+# macOS
+.DS_Store
+
+# build artifacts and inputs (large, reproducible, may contain device data)
+alioth-debian/downloads/
+alioth-debian/out/
+alioth-debian/private/
+alioth-debian/work/
+alioth-debian/rootfs/
+
+# upstream reference clones (separate repositories)
+kupfer-alioth-builds/
+pmaports-alioth/
+
+# local tooling state
+.ccgui/

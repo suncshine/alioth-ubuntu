@@ -1,0 +1,15 @@
+[Unit]
+Description=Battery charge threshold (charge at <=60%, stop at >=70%)
+After=local-fs.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/default/charge-threshold
+ExecStart=/usr/local/sbin/charge-threshold
+ExecStop=/usr/local/sbin/charge-threshold --restore
+Restart=always
+RestartSec=5
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

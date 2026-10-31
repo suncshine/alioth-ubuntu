@@ -1,0 +1,6 @@
+# Charge window for /usr/local/sbin/charge-threshold.
+# Charge starts at or below START and stops at or above STOP; between the two
+# the current state is kept.  See the script header for details.
+START=60
+STOP=70
+INTERVAL=30

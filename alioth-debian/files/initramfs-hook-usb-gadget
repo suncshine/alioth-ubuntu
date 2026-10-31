@@ -1,0 +1,15 @@
+#!/bin/sh
+# initramfs-tools hook: include `ip` for the rescue gadget scripts.
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "$1" in
+    prereqs) prereqs; exit 0 ;;
+esac
+
+. /usr/share/initramfs-tools/hook-functions
+for p in /usr/sbin/ip /usr/bin/ip /sbin/ip; do
+    if [ -x "$p" ]; then
+        copy_exec "$p" /sbin
+        break
+    fi
+done

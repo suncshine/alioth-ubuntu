@@ -1,0 +1,12 @@
+[Unit]
+Description=Mark the current A/B slot as successful
+After=local-fs.target
+ConditionPathExists=/usr/local/bin/qbootctl
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/qbootctl -m
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

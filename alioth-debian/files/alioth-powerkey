@@ -1,0 +1,324 @@
+#!/usr/bin/env python3
+"""Power button behaviour for alioth (Redmi K40 / POCO F3).
+
+Short press: lock the session and turn the internal panel off.  The next
+short press turns the panel back on and shows the lock screen.
+Long press (1.5 s, while still held): open GNOME's shutdown dialog.
+
+GNOME is told to ignore the power button itself
+(org.gnome.settings-daemon.plugins.power power-button-action='nothing'), so
+the only actor is this daemon.  It reads the PMIC pwrkey evdev node directly
+(the unit puts the desktop user into the "input" group) and drives GNOME
+through the session bus.
+
+Panel power and locking mirror what gnome-settings-daemon itself does when
+it blanks on idle: org.gnome.Mutter.DisplayConfig PowerSaveMode 3 = off,
+0 = on; org.gnome.ScreenSaver.Lock locks the session.
+"""
+
+import glob
+import os
+import struct
+import sys
+import time
+
+import gi
+
+gi.require_version("Gio", "2.0")
+gi.require_version("GLib", "2.0")
+from gi.repository import Gio, GLib
+
+EV_KEY = 1
+KEY_POWER = 116
+INPUT_EVENT = struct.Struct("llHHi")  # struct input_event, 64-bit
+
+LONG_PRESS_MS = 1500
+POWER_SAVE_ON = 0
+POWER_SAVE_OFF = 3
+
+# Ignore DPMS changes we made ourselves when looking for external wakeups.
+SELF_CHANGE_GRACE_S = 0.5
+# A power press this soon after somebody else turned the panel back on is a
+# wakeup, not a request to blank the screen again (the compositor wakes on
+# input before we see the same key event).
+RECENT_UNBLANK_S = 0.8
+
+DEVICE_GLOB = "/dev/input/by-path/*pwrkey-event"
+
+DISPLAY_CONFIG_NAME = "org.gnome.Mutter.DisplayConfig"
+DISPLAY_CONFIG_PATH = "/org/gnome/Mutter/DisplayConfig"
+DISPLAY_CONFIG_IFACE = "org.gnome.Mutter.DisplayConfig"
+SCREENSAVER_NAME = "org.gnome.ScreenSaver"
+SCREENSAVER_PATH = "/org/gnome/ScreenSaver"
+SCREENSAVER_IFACE = "org.gnome.ScreenSaver"
+SESSION_MANAGER_NAME = "org.gnome.SessionManager"
+SESSION_MANAGER_PATH = "/org/gnome/SessionManager"
+SESSION_MANAGER_IFACE = "org.gnome.SessionManager"
+
+
+def log(message):
+    print("powerkey: " + message, file=sys.stderr, flush=True)
+
+
+class PowerKeyDaemon:
+    def __init__(self):
+        self.conn = None
+        self.sub_id = 0
+        self.mode = None
+        self.mode_known = False
+        self.self_change_at = 0.0
+        self.external_unblank_at = 0.0
+
+        self.fd = -1
+        self.watch_id = 0
+        self.reopen_timer = 0
+
+        self.press_at = 0.0
+        self.press_wake = False
+        self.noop_press = False
+        self.long_fired = False
+        self.long_timer = 0
+
+        self._connect_session()
+        self._try_open_device()
+
+    # -- session bus ------------------------------------------------------
+
+    def _connect_session(self):
+        if self.conn is not None:
+            return True
+        try:
+            self.conn = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+        except GLib.Error as e:
+            self.conn = None
+            log("session bus not available: " + e.message)
+            return False
+
+        self.sub_id = self.conn.signal_subscribe(
+            DISPLAY_CONFIG_NAME,
+            "org.freedesktop.DBus.Properties",
+            "PropertiesChanged",
+            DISPLAY_CONFIG_PATH,
+            None,
+            Gio.DBusSignalFlags.NONE,
+            self._on_properties_changed,
+        )
+        self._refresh_mode()
+        return True
+
+    def _drop_session(self):
+        if self.conn is None:
+            return
+        if self.sub_id:
+            try:
+                self.conn.signal_unsubscribe(self.sub_id)
+            except Exception:
+                pass
+        self.sub_id = 0
+        self.conn = None
+        self.mode = None
+        self.mode_known = False
+
+    def _call(self, name, path, iface, method, params=None, timeout=2000):
+        if not self._connect_session():
+            return None
+        try:
+            return self.conn.call_sync(
+                name, path, iface, method, params, None,
+                Gio.DBusCallFlags.NONE, timeout, None)
+        except GLib.Error as e:
+            log("%s on %s failed: %s" % (method, name, e.message))
+            if self.conn.is_closed():
+                self._drop_session()
+            return None
+
+    def _refresh_mode(self):
+        result = self._call(
+            DISPLAY_CONFIG_NAME, DISPLAY_CONFIG_PATH,
+            "org.freedesktop.DBus.Properties", "Get",
+            GLib.Variant("(ss)", (DISPLAY_CONFIG_IFACE, "PowerSaveMode")))
+        if result is None:
+            return
+        try:
+            self.mode = int(result.unpack()[0])
+            self.mode_known = True
+        except (TypeError, ValueError, IndexError):
+            pass
+
+    def _set_mode(self, mode):
+        self.self_change_at = time.monotonic()
+        result = self._call(
+            DISPLAY_CONFIG_NAME, DISPLAY_CONFIG_PATH,
+            "org.freedesktop.DBus.Properties", "Set",
+            GLib.Variant("(ssv)", (
+                DISPLAY_CONFIG_IFACE, "PowerSaveMode", GLib.Variant("i", mode))))
+        if result is not None:
+            self.mode = mode
+            self.mode_known = True
+        return result is not None
+
+    def _on_properties_changed(self, _conn, _sender, _path, _iface,
+                               _signal, params):
+        try:
+            changed_iface, changed, _invalidated = params.unpack()
+        except (TypeError, ValueError):
+            return
+        if changed_iface != DISPLAY_CONFIG_IFACE or "PowerSaveMode" not in changed:
+            return
+        value = changed["PowerSaveMode"]
+        if isinstance(value, GLib.Variant):
+            value = value.unpack()
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            return
+
+        old = self.mode
+        self.mode = value
+        self.mode_known = True
+        if (old == POWER_SAVE_OFF and value == POWER_SAVE_ON
+                and time.monotonic() - self.self_change_at > SELF_CHANGE_GRACE_S):
+            self.external_unblank_at = time.monotonic()
+
+    # -- actions ----------------------------------------------------------
+
+    def _lock_screen(self):
+        self._call(SCREENSAVER_NAME, SCREENSAVER_PATH,
+                   SCREENSAVER_IFACE, "Lock")
+
+    def _request_shutdown(self):
+        self._call(SESSION_MANAGER_NAME, SESSION_MANAGER_PATH,
+                   SESSION_MANAGER_IFACE, "Shutdown")
+
+    def _on_press(self):
+        self.press_at = time.monotonic()
+        self.long_fired = False
+        self.noop_press = False
+        self.long_timer = GLib.timeout_add(LONG_PRESS_MS, self._on_long_press)
+
+        if not self.mode_known:
+            self._refresh_mode()
+        if not self.mode_known:
+            self.noop_press = True
+            log("screen state unknown, ignoring press")
+            return
+
+        if self.mode == POWER_SAVE_OFF:
+            self.press_wake = True
+        else:
+            self.press_wake = (
+                time.monotonic() - self.external_unblank_at) < RECENT_UNBLANK_S
+
+    def _on_long_press(self):
+        self.long_timer = 0
+        self.long_fired = True
+        if self.noop_press:
+            return False
+        log("long press: shutdown dialog")
+        if self.mode != POWER_SAVE_ON:
+            self._set_mode(POWER_SAVE_ON)
+        self._request_shutdown()
+        return False
+
+    def _on_release(self):
+        if self.long_timer:
+            GLib.source_remove(self.long_timer)
+            self.long_timer = 0
+        if self.long_fired:
+            self.long_fired = False
+            return
+        if self.noop_press:
+            self.noop_press = False
+            return
+
+        if self.press_wake:
+            log("short press: wake")
+            if self.mode != POWER_SAVE_ON:
+                self._set_mode(POWER_SAVE_ON)
+        else:
+            log("short press: lock + blank")
+            self._lock_screen()
+            self._set_mode(POWER_SAVE_OFF)
+
+    # -- input device -----------------------------------------------------
+
+    def _try_open_device(self):
+        self.reopen_timer = 0
+        matches = sorted(glob.glob(DEVICE_GLOB))
+        if not matches:
+            return self._schedule_reopen()
+
+        path = matches[0]
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        except OSError as e:
+            log("cannot open %s: %s" % (path, e.strerror))
+            return self._schedule_reopen()
+
+        self.fd = fd
+        self.watch_id = GLib.io_add_watch(
+            fd, GLib.PRIORITY_DEFAULT,
+            GLib.IO_IN | GLib.IO_ERR | GLib.IO_HUP,
+            self._on_io)
+        log("watching " + path)
+        return False
+
+    def _schedule_reopen(self):
+        if self.reopen_timer == 0:
+            self.reopen_timer = GLib.timeout_add_seconds(2, self._try_open_device)
+        return False
+
+    def _close_device(self, remove_watch):
+        if remove_watch and self.watch_id:
+            GLib.source_remove(self.watch_id)
+        self.watch_id = 0
+        if self.fd >= 0:
+            try:
+                os.close(self.fd)
+            except OSError:
+                pass
+            self.fd = -1
+
+    def _on_io(self, fd, condition):
+        if condition & (GLib.IO_ERR | GLib.IO_HUP):
+            self._close_device(remove_watch=False)
+            return self._schedule_reopen()
+
+        try:
+            data = os.read(fd, INPUT_EVENT.size * 64)
+        except BlockingIOError:
+            return True
+        except OSError as e:
+            log("read error: %s" % e.strerror)
+            self._close_device(remove_watch=False)
+            return self._schedule_reopen()
+
+        if not data:
+            self._close_device(remove_watch=False)
+            return self._schedule_reopen()
+
+        for offset in range(0, len(data) - INPUT_EVENT.size + 1,
+                            INPUT_EVENT.size):
+            _sec, _usec, etype, code, value = INPUT_EVENT.unpack_from(data, offset)
+            if etype != EV_KEY or code != KEY_POWER:
+                continue
+            if value == 1:
+                self._on_press()
+            elif value == 0:
+                self._on_release()
+        return True
+
+
+def main():
+    daemon = PowerKeyDaemon()
+    loop = GLib.MainLoop()
+    try:
+        loop.run()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        daemon._close_device(remove_watch=True)
+
+
+if __name__ == "__main__":
+    main()

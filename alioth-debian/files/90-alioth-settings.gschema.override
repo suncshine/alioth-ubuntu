@@ -1,0 +1,4 @@
+# alioth: the power key is handled by /usr/local/sbin/alioth-powerkey.
+# GNOME itself must not show the shutdown dialog on every short press.
+[org.gnome.settings-daemon.plugins.power]
+power-button-action='nothing'

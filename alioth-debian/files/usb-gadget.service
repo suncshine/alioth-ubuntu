@@ -1,12 +1,14 @@
 [Unit]
-Description=USB NCM gadget network (rescue SSH path)
+Description=USB NCM/ACM gadget (rescue SSH path)
 After=systemd-modules-load.service
 Wants=systemd-modules-load.service
 
 [Service]
 Type=oneshot
 ExecStart=/usr/local/sbin/usb-gadget
-RemainAfterExit=yes
+# Do not stay active: udev re-runs this unit whenever the UDC re-appears after
+# a Type-C role switch (host -> peripheral).
+RemainAfterExit=no
 
 [Install]
 WantedBy=multi-user.target

@@ -1,0 +1,7 @@
+# Re-run the configfs NCM/ACM gadget setup whenever a UDC appears.
+#
+# With dr_mode="otg" + usb-role-switch the kernel unbinds the gadget when the
+# Type-C data role switches to host, and the UDC device is removed. When an OTG
+# dock is unplugged and the role returns to peripheral, a new UDC is registered
+# but userspace must bind the configfs gadget again.
+ACTION=="add", SUBSYSTEM=="udc", ENV{SYSTEMD_WANTS}+="usb-gadget.service"

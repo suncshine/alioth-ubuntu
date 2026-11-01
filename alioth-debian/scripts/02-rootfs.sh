@@ -71,6 +71,8 @@ EOF
 # 6. usb ncm gadget (rescue network, pmOS convention) ------------------------
 sudo install -Dm755 "$FILES/usb-gadget.sh" "$ROOTFS/usr/local/sbin/usb-gadget"
 sudo install -Dm644 "$FILES/usb-gadget.service" "$ROOTFS/etc/systemd/system/usb-gadget.service"
+sudo install -Dm644 "$FILES/80-alioth-usb-gadget.rules" \
+  "$ROOTFS/etc/udev/rules.d/80-alioth-usb-gadget.rules"
 
 # 6b. battery charge window (start <=60%, stop >=70%) ------------------------
 sudo install -Dm755 "$FILES/charge-threshold.sh" "$ROOTFS/usr/local/sbin/charge-threshold"

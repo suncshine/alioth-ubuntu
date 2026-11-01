@@ -21,6 +21,12 @@
 见 [alioth-debian/README.md](alioth-debian/README.md) 与
 [alioth-debian/BUILD-LOG.md](alioth-debian/BUILD-LOG.md)。
 
+## 安全提示
+
+构建出的系统带有默认密码 **`root/root`**、**`user/user`**，并允许 root
+SSH 登录。首次启动后请立即执行 `passwd root` 和 `passwd user`，不要在未改
+密码的情况下接入不可信网络。
+
 ## 致谢
 
 - [Vae555/kupfer-alioth-builds](https://github.com/Vae555/kupfer-alioth-builds)

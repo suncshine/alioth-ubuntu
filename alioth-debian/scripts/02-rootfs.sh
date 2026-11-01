@@ -109,9 +109,9 @@ if [ "$REUSE" -eq 0 ]; then
     --include="$INCLUDE" \
     "$DEB_SUITE" "$ROOTFS" "$DEB_MIRROR"
 
-  # --aptopt is persisted by mmdebstrap in 99mmdebstrap.  The proxy is installed
-  # explicitly below as 95proxy, and Install-Recommends=false is a build-only
-  # setting; drop the generated file so the image keeps stock apt behaviour.
+  # --aptopt is persisted by mmdebstrap in 99mmdebstrap, but
+  # Install-Recommends=false is a build-only setting; drop the generated file
+  # so the image keeps stock apt behaviour.
   sudo rm -f "$ROOTFS/etc/apt/apt.conf.d/99mmdebstrap"
 else
   [ -f "$ROOTFS/etc/os-release" ] \
@@ -336,6 +336,8 @@ sudo chroot "$ROOTFS" systemctl set-default graphical.target 2>/dev/null || \
   echo "WARN: could not set graphical.target as default"
 
 # 14. passwords / SSH -------------------------------------------------------
+# WARNING: well-known default credentials. Change them immediately after the
+# first boot (`passwd root`, `passwd user`); root SSH login stays enabled.
 echo 'root:root' | sudo chroot "$ROOTFS" chpasswd
 echo 'user:user' | sudo chroot "$ROOTFS" chpasswd
 sudo tee "$ROOTFS/etc/ssh/sshd_config.d/10-alioth-rescue.conf" >/dev/null <<EOF

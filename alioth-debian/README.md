@@ -14,6 +14,7 @@ Redmi K40 / POCO F3 (alioth) 上的 Debian trixie + Phosh。
 | `scripts/05-flash.sh` | **macOS** | fastboot 刷入（erase dtbo_b → boot_b → userdata → set_active b） |
 | `scripts/06-bt-bdaddr.sh` | macOS 或 VM | 给 boot.img 内追加的 DTB 注入蓝牙 `local-bd-address`（不重编内核） |
 | `scripts/10-daemons.sh` | **VM**（02 自动调用） | 编译 qbootctl（必需）+ 可选高通守护进程 |
+| `scripts/11-desktop-apps.sh` | **手机**（root） | 安装精简的 Ubuntu 26.04 桌面应用集（不含 LibreOffice）；Firefox 用 Mozilla arm64 tarball（snap 不可用） |
 | `tools/bootimg.py` | 任意 | Android boot image 解包/打包；已对 Kupfer 参考镜像做字节级验证 |
 
 ## 快速流程

@@ -1,0 +1,64 @@
+# Ubuntu 26.04 (resolute) desktop application set for alioth.
+#
+# Source: the user-visible entries in the Recommends of ubuntu-desktop and
+# ubuntu-desktop-minimal (checked with `apt-cache depends` against
+# Ubuntu 26.04/resolute arm64).  The rootfs was built with
+# `--no-install-recommends`, so these have to be installed explicitly.
+#
+# Deliberately excluded:
+#   snapd / firefox / thunderbird  - Ubuntu ships these as snaps; this kernel
+#                                    has no AppArmor (LSM=capability,bpf) and
+#                                    snapd is not usable.  Firefox comes from
+#                                    Mozilla's linux-aarch64 tarball instead
+#                                    (see 11-desktop-apps.sh); Thunderbird has
+#                                    no official arm64 Linux build.
+#   libreoffice-*                  - office suite intentionally omitted; this
+#                                    device is used mainly for browsing.
+#   server/enterprise recommends   - cups drivers, sssd, cloud-init, kdump,
+#                                    brltty, orca, ibus, etc.
+#   gnome-weather/maps/contacts/connections - not part of the 26.04 default set.
+#
+# One package per line; blank lines and '#' comments are ignored.
+
+# --- desktop utilities ------------------------------------------------------
+baobab
+deja-dup
+file-roller
+gvfs-fuse
+gnome-calculator
+gnome-calendar
+gnome-characters
+gnome-clocks
+gnome-disk-utility
+gnome-font-viewer
+gnome-keyring
+gnome-logs
+gnome-snapshot
+gnome-software
+gnome-text-editor
+loupe
+nautilus
+papers
+ptyxis
+remmina
+seahorse
+shotwell
+showtime
+simple-scan
+transmission-gtk
+yelp
+
+# --- media ----------------------------------------------------------------
+rhythmbox
+
+# --- fonts / themes / help -------------------------------------------------
+fonts-liberation
+fonts-noto-cjk
+fonts-noto-color-emoji
+fonts-noto-core
+fonts-ubuntu
+ubuntu-docs
+xcursor-themes
+yaru-theme-gtk
+yaru-theme-icon
+yaru-theme-sound

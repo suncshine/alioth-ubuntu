@@ -13,11 +13,13 @@
 | 路径 | 内容 |
 |---|---|
 | `alioth-debian/` | 构建脚本、注入文件与文档 |
+| `FLASHING.md` | 下载镜像、注入 MAC/救援公钥、刷机与回滚 |
 | `references/` | 从两个参考项目归档的关键文件 |
 
 ## 快速开始
 
-见 [alioth-debian/README.md](alioth-debian/README.md)。
+- 直接刷机：[FLASHING.md](FLASHING.md)
+- 从源码构建：[alioth-debian/README.md](alioth-debian/README.md)
 
 ## 安全提示
 

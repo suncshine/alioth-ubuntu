@@ -23,6 +23,7 @@
 #   ./02-rootfs.sh --no-daemon-build   # copy qbootctl from the host (default)
 #   ./02-rootfs.sh --reuse-rootfs      # skip mmdebstrap, rerun only the layers
 #                                     # (useful when a post-install step failed)
+#   ./02-rootfs.sh --no-rescue-key     # do not embed a host SSH key (public image)
 #
 # Requirements on the host: mmdebstrap, dtc/fdtget/fdtput, depmod, and either
 # $OUT/kernel/modules/$KVER or a native /lib/modules/$KVER for the target.
@@ -34,6 +35,7 @@ SKIP_CAMERA=0
 SKIP_SENSORS=0
 BUILD_DAEMONS=0
 REUSE=0
+NO_RESCUE_KEY=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -43,7 +45,8 @@ while [ $# -gt 0 ]; do
     --build-daemons)   BUILD_DAEMONS=1; shift ;;
     --no-daemon-build) BUILD_DAEMONS=0; shift ;;
     --reuse-rootfs)    REUSE=1; shift ;;
-    -h|--help)         sed -n '2,40p' "$0"; exit 0 ;;
+    --no-rescue-key)   NO_RESCUE_KEY=1; shift ;;
+    -h|--help)         sed -n '2,42p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -91,17 +94,6 @@ if [ "$REUSE" -eq 0 ]; then
   sudo rm -rf "$ROOTFS"
 
   APT_OPTS=(--aptopt='Apt::Install-Recommends "false"')
-  # Reuse the host's apt proxy (if any) for the chroot's apt.
-  if [ -r /etc/apt/apt.conf.d/95proxy ]; then
-    PROXY="$(sed -n 's/^Acquire::http::Proxy "\(.*\)";/\1/p' /etc/apt/apt.conf.d/95proxy | head -1)"
-    if [ -n "$PROXY" ]; then
-      log "apt proxy: $PROXY"
-      APT_OPTS+=(
-        --aptopt="Acquire::http::Proxy \"$PROXY\";"
-        --aptopt="Acquire::https::Proxy \"$PROXY\";"
-      )
-    fi
-  fi
 
   sudo mmdebstrap --arch=arm64 --variant=minbase \
     --components="$DEB_COMPONENTS" \
@@ -292,12 +284,19 @@ sudo install -Dm755 "$FILES/initramfs-hook-usb-gadget" \
 sudo install -Dm755 "$FILES/initramfs-hook-remoteproc-fw" \
   "$ROOTFS/etc/initramfs-tools/hooks/remoteproc-fw"
 RESCUE_KEY="$WORK/private/rescue_authorized_keys"
-[ -f "$RESCUE_KEY" ] || RESCUE_KEY=/root/.ssh/authorized_keys
-if [ -f "$RESCUE_KEY" ]; then
-  sudo install -Dm600 "$RESCUE_KEY" "$ROOTFS/etc/dropbear/initramfs/authorized_keys"
-  sudo install -Dm600 "$RESCUE_KEY" "$ROOTFS/root/.ssh/authorized_keys"
+if [ "$NO_RESCUE_KEY" -eq 1 ]; then
+  log "rescue SSH key: skipped (--no-rescue-key)"
+  # Also remove a key left by an earlier --reuse-rootfs build.
+  sudo rm -f "$ROOTFS/etc/dropbear/initramfs/authorized_keys" \
+              "$ROOTFS/root/.ssh/authorized_keys"
 else
-  echo "WARN: no rescue authorized_keys found — initramfs SSH will have no key"
+  [ -f "$RESCUE_KEY" ] || RESCUE_KEY=/root/.ssh/authorized_keys
+  if [ -f "$RESCUE_KEY" ]; then
+    sudo install -Dm600 "$RESCUE_KEY" "$ROOTFS/etc/dropbear/initramfs/authorized_keys"
+    sudo install -Dm600 "$RESCUE_KEY" "$ROOTFS/root/.ssh/authorized_keys"
+  else
+    echo "WARN: no rescue authorized_keys found — initramfs SSH will have no key"
+  fi
 fi
 
 # 12. user, display config, passwords ---------------------------------------
@@ -352,6 +351,25 @@ sudo install -Dm644 "$FILES/desktop-apps.txt" "$ROOTFS/usr/local/share/alioth/de
 # 16. clean up --------------------------------------------------------------
 sudo chroot "$ROOTFS" apt-get clean 2>/dev/null || true
 sudo rm -rf "$ROOTFS/var/lib/apt/lists"/* "$ROOTFS/var/cache/apt/archives"/*.deb
+
+# Build-host state that must not ship in a redistributable image.
+# 95proxy is only present in rootfs trees produced by older build scripts.
+sudo rm -f "$ROOTFS/etc/apt/apt.conf.d/95proxy"
+if [ -f "$ROOTFS/etc/resolv.conf" ] && [ ! -L "$ROOTFS/etc/resolv.conf" ]; then
+  echo "nameserver 1.1.1.1" | sudo tee "$ROOTFS/etc/resolv.conf" >/dev/null
+fi
+# Host keys and machine-id are generated on first boot, not shared by every
+# device that flashes the image.
+sudo rm -f "$ROOTFS"/etc/ssh/ssh_host_*
+sudo rm -f "$ROOTFS/etc/machine-id" "$ROOTFS/var/lib/dbus/machine-id" \
+           "$ROOTFS/var/lib/systemd/random-seed"
+sudo install -Dm644 "$FILES/ssh-host-keys.service" \
+  "$ROOTFS/etc/systemd/system/ssh-host-keys.service"
+sudo chroot "$ROOTFS" systemctl enable ssh-host-keys.service 2>/dev/null || \
+  echo "WARN: could not enable ssh-host-keys.service"
+sudo rm -rf "$ROOTFS"/var/log/* "$ROOTFS"/var/log/journal
+sudo find "$ROOTFS/root" "$ROOTFS/home/user" -maxdepth 2 \
+  -name '.bash_history' -delete 2>/dev/null || true
 
 echo "OK: rootfs ready at $ROOTFS"
 echo "Next: 03-initramfs.sh (initrd), 04-bootimg.sh (ext4 + boot image)."

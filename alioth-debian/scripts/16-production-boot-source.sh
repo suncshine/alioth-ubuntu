@@ -27,7 +27,11 @@
 #   KSRC        kernel source tree for the DTS preprocessor
 #   CPP         preprocessor override (default clang/gcc/cc)
 #   INITRD_IMG  initramfs to embed; default out/initrd.img (03-initramfs.sh)
-#   WIFI_MAC    device Wi-Fi MAC; default read from private/wifi-mac by 14
+#   WIFI_MAC    device Wi-Fi MAC.  If unset, a generic image without
+#               local-mac-address is built; inject the MAC later with
+#               scripts/09-wifi-mac.sh before flashing.
+#   BOOT_CMDLINE override cmdline; set to "$CMDLINE_DEBUG" for a rescue image
+#               that always stops in the initramfs (break=mount).
 #   OUT_IMG     default out/boot-production-final.img
 #
 # This script does NOT flash anything.
@@ -37,6 +41,7 @@ set -euo pipefail
 KERNEL_IMG="${KERNEL_IMG:-$OUT/kernel/Image.gz.thermal}"
 AUDIO_DTB="${AUDIO_DTB:-$OUT/kernel/audio.dtb}"
 INITRD_IMG="${INITRD_IMG:-$INITRD}"
+BOOT_CMDLINE="${BOOT_CMDLINE:-$CMDLINE}"
 OUT_IMG="${OUT_IMG:-$OUT/boot-production-final.img}"
 KSRC="${KSRC:-/tmp/alioth-kernel-check/src}"
 if [ ! -d "$KSRC/include/dt-bindings" ] && [ -d "$WORK/kernel-src/include/dt-bindings" ]; then
@@ -91,13 +96,17 @@ cat "$KERNEL_IMG" "$AUDIO_DTB" > "$TMP/Image.gz-dtb"
 python3 "$WORK/tools/bootimg.py" pack \
   --kernel "$TMP/Image.gz-dtb" \
   --ramdisk "$INITRD_IMG" \
-  --cmdline "$CMDLINE" \
+  --cmdline "$BOOT_CMDLINE" \
   --output "$TMP/base.img"
 log "base image: $(stat -c%s "$TMP/base.img" 2>/dev/null || stat -f%z "$TMP/base.img") B"
 
 # --- 3. Wi-Fi MAC + camera pruning (splash/BT already in the DTS) ----------
 ARGS=(--base "$TMP/base.img" --output "$OUT_IMG")
-[ -n "${WIFI_MAC:-}" ] && ARGS+=(--wifi-mac "$WIFI_MAC")
+if [ -n "${WIFI_MAC:-}" ]; then
+  ARGS+=(--wifi-mac "$WIFI_MAC")
+else
+  ARGS+=(--no-wifi-mac)
+fi
 "$SCRIPTS/14-production-boot.sh" "${ARGS[@]}"
 
 echo

@@ -22,8 +22,10 @@ IMX582 主摄 + DW9800 手动对焦、SSC 传感器（加速度/光感/罗盘）
 | `scripts/09-wifi-mac.sh` | macOS/Linux | DTB 注入 WiFi `local-mac-address`（MAC 从 persist 读取，不写进仓库） |
 | `scripts/13-camera-dtb.sh` | macOS/Linux | 删除无驱动的 CAMSS port@0/2/4，保留 IMX582 |
 | `scripts/10-splash-mem.sh` | macOS/Linux | 保留 ABL 开机 Logo 帧缓冲（幂等；源 DTS 已含节点） |
-| `scripts/14-production-boot.sh` | macOS/Linux | 从 audio 基底重放 BT/WiFi/相机/splash，**逐字节复现当前 boot_b** |
-| `scripts/16-production-boot-source.sh` | macOS/Linux | 从 tracked DTS + thermal Image.gz + initrd 重新构建生产 boot image |
+| `scripts/14-production-boot.sh` | macOS/Linux | 从 audio 基底重放 BT/WiFi/相机/splash，逐字节复现生产 boot image |
+| `scripts/16-production-boot-source.sh` | macOS/Linux | 从 tracked DTS + thermal Image.gz + initrd 重新构建生产 boot image；不设 `WIFI_MAC` 时生成通用镜像 |
+| `scripts/17-inject-rescue-key.sh` | macOS/Linux | 把救援 SSH 公钥注入 boot image 的 initramfs |
+| `tools/inject-initramfs-key.py` | 任意 | `17-inject-rescue-key.sh` 的底层实现 |
 | `scripts/13-camera-modules.sh` | 手机或 `--root` | 编译/安装 imx582+dw9800（固定 build dir，优先 gcc-16） |
 | `scripts/20-sensors-ssc.sh` | 手机或 `--root` | 安装 libssc + SSC 版 iio-sensor-proxy + drop-in/udev |
 | `scripts/10-daemons.sh` | VM | 编译 qbootctl（`--build-daemons` 时） |
@@ -35,7 +37,7 @@ IMX582 主摄 + DW9800 手动对焦、SSC 传感器（加速度/光感/罗盘）
 
 ### A. 生产 boot image（无需重编内核）
 
-精确复现历史 boot_b `d92a1ebf…`（已验证逐字节一致；当前 boot_b 已换成下面的源构建镜像）：
+精确复现历史 boot image（同一 MAC 时与历史产物逐字节一致）：
 
 ```bash
 WIFI_MAC=xx:xx:xx:xx:xx:xx      # 从 persist /dev/sda22 的 wlan_mac.bin 读取
@@ -52,8 +54,7 @@ KSRC=/root/kernel-build/linux \
 KERNEL_IMG=/root/kernel-build/linux/arch/arm64/boot/Image.gz \
 ./scripts/16-production-boot-source.sh
 # 产物 out/boot-production-final.img；DTB 顺序与历史镜像不同，功能等价
-# 当前已刷入并冷启动验证的 boot_b：8d6447a7…（58,683,392 B，42 MB initrd
-# 带 adsp/slpi/cdsp 固件）；旧 boot_b d92a1ebf… 保留为回滚。
+# 不设置 WIFI_MAC 时生成不含 local-mac-address 的通用镜像
 ```
 
 内核 artifact 的来源、哈希和配置见 `files/kernel/README.md`。
@@ -62,7 +63,9 @@ KERNEL_IMG=/root/kernel-build/linux/arch/arm64/boot/Image.gz \
 
 ```bash
 # arm64 Linux 构建机；手机自身也可（需 mmdebstrap、gcc-16、dtc、depmod）
-./scripts/02-rootfs.sh                # 约 20-40 min（首次下载 ~1-2 GB）
+# 发布镜像用 --no-rescue-key，避免把构建机的 SSH 公钥带进镜像；
+# 需要刷机救援通道时，之后用 17-inject-rescue-key.sh 注入到 boot image。
+./scripts/02-rootfs.sh --no-rescue-key   # 约 20-40 min（首次下载 ~1-2 GB）
 ./scripts/03-initramfs.sh
 ./scripts/15-rootfs-image.sh --recreate --sparse --gzip
 # 产物 out/alioth-debian.img、out/alioth-debian-sparse.img、out/initrd.img
@@ -80,8 +83,9 @@ qbootctl；无需 `downloads/` 与 VM。`--build-daemons` 可在干净 VM 上从
 
 ### C. 刷机
 
-大 rootfs **不要走 fastboot 大文件传输**：用 initramfs + USB NCM SSH
-流式写入 `/dev/sda35`，再 dd 生产 boot image 到 `boot_b`。
+完整步骤见 [`../FLASHING.md`](../FLASHING.md)：下载发布镜像、注入 WiFi MAC
+和救援公钥、备份分区、刷 `boot_b`，再通过 initramfs USB 网络流式写入
+`/dev/sda35`。
 
 ## 已核实的关键事实
 
@@ -89,13 +93,10 @@ qbootctl；无需 `downloads/` 与 VM。`--build-daemons` 可在干净 VM 上从
   0x1000000、tags 0x100、second_addr=0；内核 blob = `Image.gz` + DTB 拼接。
 - 生产 cmdline 含 `ip=172.16.42.1::172.16.42.2:...::usb0:off`，initramfs
   的 dropbear/救援网络因此无需等待 rootfs。
-- rootfs 分区 `/dev/sda35`；ext4 4096 字节块；当前 boot_b 为源构建的
-  `out/boot-production-final.img`（SHA256 `8d6447a7…`，42 MB 固件 initrd）；
-  回滚 `out/boot-production-camera-splash.img`（`d92a1ebf…`）。
-- 新的 GNOME rootfs 镜像（sparse `f20ac75a…`、gz `77499e53…`、e2fsck
-  通过、89,006 文件，含 2 GiB zram）已构建但**未刷入**；当前运行的是旧
-  rootfs。系统没有磁盘 swap（无 swap 分区/swapfile/fstab 条目），只有
-  zram。
+- rootfs 分区 `/dev/sda35`；ext4 4096 字节块；发布镜像的 SHA-256 见
+  [`../FLASHING.md`](../FLASHING.md)。
+- 发布 rootfs 含 2 GiB zstd zram，系统没有磁盘 swap（无 swap 分区、
+  swapfile 或 fstab 条目）。
 - 救援通道：USB NCM（`usb-gadget.service`，手机 172.16.42.1）；OTG 角色
   自动切换由 DTB 的 `dr_mode="otg"` + `80-alioth-usb-gadget.rules` 负责。
 

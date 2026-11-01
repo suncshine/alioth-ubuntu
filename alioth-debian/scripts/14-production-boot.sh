@@ -17,11 +17,15 @@
 # instead of silently replacing it.
 #
 # Usage:
-#   14-production-boot.sh [--base IMG] [--wifi-mac MAC] [--bt-bdaddr ADDR]
-#                         [--output IMG]
+#   14-production-boot.sh [--base IMG] [--wifi-mac MAC] [--no-wifi-mac]
+#                         [--bt-bdaddr ADDR] [--output IMG]
 # Default:
 #   base   out/boot-production-audio.img
 #   output out/boot-production-final.img
+#
+# --no-wifi-mac builds a generic image without local-mac-address.  Use it for
+# a redistributable boot image; each device must inject its own MAC from
+# persist before flashing (scripts/09-wifi-mac.sh).
 #
 # This script does NOT flash anything.
 set -euo pipefail
@@ -31,14 +35,16 @@ BASE_IMG="$OUT/boot-production-audio.img"
 OUT_IMG="$OUT/boot-production-final.img"
 WIFI_MAC="${WIFI_MAC:-}"
 BT_ADDR=""
+NO_WIFI_MAC=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --base)      BASE_IMG="$2"; shift 2 ;;
-    --wifi-mac)  WIFI_MAC="$2"; shift 2 ;;
-    --bt-bdaddr) BT_ADDR="$2"; shift 2 ;;
-    --output)    OUT_IMG="$2"; shift 2 ;;
-    -h|--help)   sed -n '2,30p' "$0"; exit 0 ;;
+    --base)        BASE_IMG="$2"; shift 2 ;;
+    --wifi-mac)    WIFI_MAC="$2"; shift 2 ;;
+    --no-wifi-mac) NO_WIFI_MAC=1; shift ;;
+    --bt-bdaddr)   BT_ADDR="$2"; shift 2 ;;
+    --output)      OUT_IMG="$2"; shift 2 ;;
+    -h|--help)     sed -n '2,33p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -51,7 +57,7 @@ command -v dtc >/dev/null || die "dtc missing"
 command -v fdtput >/dev/null || die "fdtput missing"
 command -v fdtget >/dev/null || die "fdtget missing"
 
-if [ -z "$WIFI_MAC" ] && [ -f "$WORK/private/wifi-mac" ]; then
+if [ "$NO_WIFI_MAC" -eq 0 ] && [ -z "$WIFI_MAC" ] && [ -f "$WORK/private/wifi-mac" ]; then
   WIFI_MAC="$(tr -d '[:space:]' < "$WORK/private/wifi-mac")"
 fi
 if [ -n "$WIFI_MAC" ] && ! [[ "$WIFI_MAC" =~ ^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$ ]]; then
@@ -98,8 +104,11 @@ else
 fi
 
 CUR="$(dtb_prop "$CUR_IMG" "$WIFI_NODE" local-mac-address || true)"
-if [ -z "$CUR" ]; then
-  [ -n "$WIFI_MAC" ] || die "base has no local-mac-address; pass --wifi-mac or create $WORK/private/wifi-mac"
+if [ "$NO_WIFI_MAC" -eq 1 ]; then
+  [ -z "$CUR" ] || die "base has local-mac-address [$CUR]; use a generic base for --no-wifi-mac"
+  echo "==> leaving local-mac-address unset (generic image)"
+elif [ -z "$CUR" ]; then
+  [ -n "$WIFI_MAC" ] || die "base has no local-mac-address; pass --wifi-mac, --no-wifi-mac, or create $WORK/private/wifi-mac"
   echo "==> adding local-mac-address $WIFI_MAC"
   "$SCRIPTS/09-wifi-mac.sh" "$WIFI_MAC" "$CUR_IMG" "$TMP/02-wifi.img"
   CUR_IMG="$TMP/02-wifi.img"

@@ -35,6 +35,8 @@ gnome-keyring
 gnome-logs
 gnome-snapshot
 gnome-software
+gnome-system-monitor
+gnome-terminal
 gnome-text-editor
 loupe
 nautilus

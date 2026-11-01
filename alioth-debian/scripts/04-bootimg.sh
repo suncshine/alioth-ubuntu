@@ -3,16 +3,21 @@
 set -euo pipefail
 . "$(dirname "$0")/env.sh"
 
-# boot kernel blob = Image.gz with DTB appended (same layout as the Kupfer
-# reference image — verified by byte-identical round-trip, see tools/bootimg.py)
-cat "$OUT/kernel/Image.gz" "$OUT/kernel/sm8250-xiaomi-alioth.dtb" > "$OUT/Image.gz-dtb"
+# Boot kernel blob = Image.gz with DTB appended (same layout as the Kupfer
+# reference image — verified by byte-identical round-trip, see tools/bootimg.py).
+# KERNEL_IMG / DTB_IMG can point at the rebuilt thermal kernel and the audio
+# DTB; the production boot image itself is assembled by 14/16, not by this
+# script.  The defaults here are the pristine Kupfer package artifacts.
+KERNEL_IMG="${KERNEL_IMG:-$OUT/kernel/Image.gz}"
+DTB_IMG="${DTB_IMG:-$OUT/kernel/sm8250-xiaomi-alioth.dtb}"
+cat "$KERNEL_IMG" "$DTB_IMG" > "$OUT/Image.gz-dtb"
 
 # ABL overlays dtbo/hypervisor nodes onto this DTB and silently refuses images
 # without __symbols__ (fastboot says OKAY, kernel never starts).  Kupfer builds
 # its DTB with DTC_FLAGS="-@"; the shipped DTB has been checked for the marker.
 # NOTE: do not use `grep -q` here — it exits early, strings gets SIGPIPE and
 # `set -o pipefail` turns a successful match into a failure.
-if ! strings "$OUT/kernel/sm8250-xiaomi-alioth.dtb" | grep __symbols__ >/dev/null; then
+if ! strings "$DTB_IMG" | grep __symbols__ >/dev/null; then
   echo "ERROR: DTB has no __symbols__ — ABL will reject the overlay. Rebuild dtbs with DTC_FLAGS=-@." >&2
   exit 1
 fi

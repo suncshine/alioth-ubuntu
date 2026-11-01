@@ -1,0 +1,3 @@
+# alioth build-time additions on top of the Kupfer sm8250 7.2.0 config.
+# Needed for the GPU devfreq cooling device (GPU thermal throttling).
+CONFIG_DEVFREQ_THERMAL=y

@@ -11,6 +11,14 @@
 # The property restores the old behaviour: the driver writes the PMIC registers
 # directly (drivers/rtc/rtc-pm8xxx.c: pm8xxx_rtc_set_time -> allow_set_time).
 #
+# KNOWN RESULT (2026-11-01, alioth): this does NOT make the RTC writable.
+# The PMIC arbiter maps PPID 0x060 (RTC page) only to APID 2, whose owner is
+# EE1 (ADSP/AOP side); Linux runs as EE0, so every write is rejected with
+#   "disallowed SPMI write to sid=0, addr=0x6046" -> -EPERM.
+# The property merely changes the error from -ENODEV to -EPERM.  Do NOT try
+# to rewrite the APID owner register (0xc40a708) to steal the channel: that
+# hung the whole device in testing.  Kept for reference/other SoCs only.
+#
 # Everything else in the base image (Image.gz, ramdisk, cmdline, the
 # dr_mode="peripheral" USB override, any local-bd-address) is carried over
 # unchanged.

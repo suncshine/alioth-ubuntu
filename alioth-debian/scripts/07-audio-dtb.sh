@@ -16,6 +16,10 @@
 #      CPP   preprocessor (default: clang if present, else gcc/cc)
 #      AUDIO_DTB  use this prebuilt DTB instead of compiling the DTS
 #            (e.g. build/alioth-audio.dtb built with dtc by hand).
+#      DTB_ONLY=1  build only the DTB and write DTB_OUT (default
+#            $OUT/kernel/audio.dtb); no base boot image is needed.  Used by
+#            16-production-boot-source.sh for a from-source boot image.
+#      DTB_OUT     output path for DTB_ONLY.
 #
 # This script does NOT flash anything.
 set -euo pipefail
@@ -34,7 +38,6 @@ if [ -z "${AUDIO_DTB:-}" ] && [ ! -d "$KSRC/include/dt-bindings" ]; then
 	die "kernel source not found: set KSRC (needs include/dt-bindings and arch/arm64/boot/dts/qcom/sm8250.dtsi) or pass AUDIO_DTB"
 fi
 
-[ -f "$BASE_IMG" ] || die "base boot image not found: $BASE_IMG"
 [ -f "$DTS" ]      || die "audio DTS not found: $DTS"
 command -v dtc >/dev/null || die "dtc missing (macOS: brew install dtc; Debian: apt install device-tree-compiler)"
 command -v fdtget >/dev/null || die "fdtget missing (see dtc above)"
@@ -71,6 +74,16 @@ BT_HEX="$(fdtget -t bx "$TMP/audio.dtb" /soc@0/geniqup@9c0000/serial@998000/blue
 [ "$BT_HEX" = "9a7856341202" ] \
 	|| die "audio DTB lost the Bluetooth local-bd-address (got '$BT_HEX')"
 echo "audio DTB: $(stat -f%z "$TMP/audio.dtb" 2>/dev/null || stat -c%s "$TMP/audio.dtb") B"
+
+if [ "${DTB_ONLY:-0}" = 1 ]; then
+	DTB_OUT="${DTB_OUT:-$OUT/kernel/audio.dtb}"
+	mkdir -p "$(dirname "$DTB_OUT")"
+	cp "$TMP/audio.dtb" "$DTB_OUT"
+	echo "OK: $DTB_OUT"
+	exit 0
+fi
+
+[ -f "$BASE_IMG" ] || die "base boot image not found: $BASE_IMG"
 
 # --- 2. split the base image: Image.gz + appended DTB + ramdisk + cmdline ---
 python3 - "$BASE_IMG" "$TMP" <<'PY'

@@ -9,8 +9,8 @@ alioth-debian/work/
 alioth-debian/rootfs/
 
 # upstream reference clones (separate repositories)
-kupfer-alioth-builds/
-pmaports-alioth/
+/kupfer-alioth-builds/
+/pmaports-alioth/
 
 # local tooling state
 .ccgui/

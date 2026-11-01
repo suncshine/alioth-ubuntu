@@ -1,0 +1,43 @@
+[wrapper]
+type = "chroot"
+
+[build]
+ccache = true
+clean_mode = true
+crosscompile = true
+crossdirect = true
+threads = 8
+
+[pkgbuilds]
+git_repo = "https://gitlab.com/kupfer/packages/pkgbuilds.git"
+git_branch = "dev"
+
+[pacman]
+parallel_downloads = 4
+check_space = true
+repo_branch = "dev"
+
+[paths]
+cache_dir = "/home/runner/.cache/kupfer"
+chroots = "%cache_dir%/chroots"
+pacman = "%cache_dir%/pacman"
+packages = "%cache_dir%/packages"
+pkgbuilds = "%cache_dir%/pkgbuilds"
+jumpdrive = "%cache_dir%/jumpdrive"
+images = "%cache_dir%/images"
+ccache = "%cache_dir%/ccache"
+rust = "%cache_dir%/rust"
+http_cache = "%cache_dir%/http_cache"
+
+[profiles]
+current = "default"
+
+[profiles.default]
+device = "sm8250-xiaomi-alioth"
+flavour = "barebone"
+pkgs_include = ["wget", "bluedevil", "extra/plasma-mobile", "extra/plasma-settings", "extra/plasma-login-manager", "extra/kscreen", "extra/konsole"]
+pkgs_exclude = []
+hostname = "alioth"
+username = "alarm"
+password = "alarm"
+size_extra_mb = "4096"

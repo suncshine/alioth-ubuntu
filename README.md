@@ -12,14 +12,12 @@
 
 | 路径 | 内容 |
 |---|---|
-| `AGENTS.md` | 决策、约束、当前状态与待办 |
 | `alioth-debian/` | 构建脚本、注入文件与文档 |
 | `references/` | 从两个参考项目归档的关键文件 |
 
 ## 快速开始
 
-见 [alioth-debian/README.md](alioth-debian/README.md) 与
-[alioth-debian/BUILD-LOG.md](alioth-debian/BUILD-LOG.md)。
+见 [alioth-debian/README.md](alioth-debian/README.md)。
 
 ## 安全提示
 

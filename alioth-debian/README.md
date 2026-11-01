@@ -7,7 +7,7 @@ Redmi K40 / POCO F3（`alioth`，SM8250）上的 **Ubuntu 26.04 LTS arm64 +
 当前实机可用：显示/触控、WiFi（固定 MAC）、蓝牙、音频（扬声器 + 四路麦）、
 IMX582 主摄 + DW9800 手动对焦、SSC 传感器（加速度/光感/罗盘）、GPU 温控、
 电源键、充电阈值、2 GiB zstd zram swap（无磁盘 swap）、USB NCM/OTG 救援
-通道。详见 `AGENTS.md` 与 `BUILD-LOG.md`。
+通道。
 
 ## 脚本与执行位置
 
@@ -81,8 +81,7 @@ qbootctl；无需 `downloads/` 与 VM。`--build-daemons` 可在干净 VM 上从
 ### C. 刷机
 
 大 rootfs **不要走 fastboot 大文件传输**：用 initramfs + USB NCM SSH
-流式写入 `/dev/sda35`，再 dd 生产 boot image 到 `boot_b`。命令、备份和回滚
-见 `BUILD-LOG.md`。
+流式写入 `/dev/sda35`，再 dd 生产 boot image 到 `boot_b`。
 
 ## 已核实的关键事实
 
@@ -109,4 +108,3 @@ qbootctl；无需 `downloads/` 与 VM。`--build-daemons` 可在干净 VM 上从
   ABGR8888 受 32 MB CMA 限制；前摄/超广角/微距未启用。
 - Firefox 不在 rootfs 内（无 arm64 deb，snap 不可用）：首次启动后运行
   `sudo /usr/local/lib/alioth/11-desktop-apps.sh --refresh-firefox`。
-- 详见 `CAMERA.md`、`SENSORS.md`、`AGENTS.md` 的“待办/已知问题/技术债”。

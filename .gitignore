@@ -14,3 +14,10 @@ alioth-debian/rootfs/
 
 # local tooling state
 .ccgui/
+
+# internal development notes (kept locally, not published)
+/AGENTS.md
+/alioth-debian/BUILD-LOG.md
+/alioth-debian/SENSORS.md
+/alioth-debian/CAMERA.md
+/alioth-debian/files/audio/STATUS.md

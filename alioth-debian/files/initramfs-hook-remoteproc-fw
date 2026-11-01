@@ -1,0 +1,24 @@
+#!/bin/sh
+# Copy the alioth DSP firmware into the initramfs.
+#
+# initramfs-tools uses MODULES=most, so qcom_q6v5_pas.ko is present in the
+# initrd and udev may probe the adsp/slpi/cdsp remoteprocs before switch_root.
+# Without the .mbn files that probe fails with -ENOENT and the DSPs stay
+# offline for the whole boot (no audio, no sensors, hexagonrpcd fails).
+# The rootfs keeps the same files for the post-switch_root explicit load.
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+
+case "$1" in
+    prereqs)
+        prereqs
+        exit 0
+        ;;
+esac
+
+. /usr/share/initramfs-tools/hook-functions
+
+SRC=/lib/firmware/qcom/sm8250/xiaomi/alioth
+DST="$DESTDIR/lib/firmware/qcom/sm8250/xiaomi/alioth"
+mkdir -p "$DST"
+cp -a "$SRC"/. "$DST"/

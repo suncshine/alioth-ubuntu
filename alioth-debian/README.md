@@ -34,7 +34,7 @@ IMX582 主摄 + DW9800 手动对焦、SSC 传感器（加速度/光感/罗盘）
 
 ### A. 生产 boot image（无需重编内核）
 
-精确复现当前 boot_b（已验证逐字节一致）：
+精确复现历史 boot_b `d92a1ebf…`（已验证逐字节一致；当前 boot_b 已换成下面的源构建镜像）：
 
 ```bash
 WIFI_MAC=xx:xx:xx:xx:xx:xx      # 从 persist /dev/sda22 的 wlan_mac.bin 读取
@@ -51,6 +51,8 @@ KSRC=/root/kernel-build/linux \
 KERNEL_IMG=/root/kernel-build/linux/arch/arm64/boot/Image.gz \
 ./scripts/16-production-boot-source.sh
 # 产物 out/boot-production-final.img；DTB 顺序与历史镜像不同，功能等价
+# 当前已刷入并冷启动验证的 boot_b：8d6447a7…（58,683,392 B，42 MB initrd
+# 带 adsp/slpi/cdsp 固件）；旧 boot_b d92a1ebf… 保留为回滚。
 ```
 
 内核 artifact 的来源、哈希和配置见 `files/kernel/README.md`。
@@ -61,9 +63,14 @@ KERNEL_IMG=/root/kernel-build/linux/arch/arm64/boot/Image.gz \
 # arm64 Linux 构建机；手机自身也可（需 mmdebstrap、gcc-16、dtc、depmod）
 ./scripts/02-rootfs.sh                # 约 20-40 min（首次下载 ~1-2 GB）
 ./scripts/03-initramfs.sh
-./scripts/15-rootfs-image.sh --recreate --sparse
+./scripts/15-rootfs-image.sh --recreate --sparse --gzip
 # 产物 out/alioth-debian.img、out/alioth-debian-sparse.img、out/initrd.img
 ```
+
+`03-initramfs.sh` 通过 `files/initramfs-hook-remoteproc-fw` 把 adsp/slpi/cdsp
+固件（`.mbn` + `.jsn`）放进 initrd 并校验。**必须保留这一步**：
+`MODULES=most` 会把 `qcom_q6v5_pas.ko` 带进 initrd，缺少固件时 DSP probe
+会永久失败，导致无声卡、传感器/hexagonrpcd 全挂。
 
 手机侧构建时，`02-rootfs.sh` 会从运行中的 `/lib/modules/7.2.0`、
 `/lib/firmware`、`/usr/share/qcom` 复制内核模块和固件，并从 host 复制
@@ -82,8 +89,11 @@ qbootctl；无需 `downloads/` 与 VM。`--build-daemons` 可在干净 VM 上从
   0x1000000、tags 0x100、second_addr=0；内核 blob = `Image.gz` + DTB 拼接。
 - 生产 cmdline 含 `ip=172.16.42.1::172.16.42.2:...::usb0:off`，initramfs
   的 dropbear/救援网络因此无需等待 rootfs。
-- rootfs 分区 `/dev/sda35`；ext4 4096 字节块；当前 boot_b 为
-  `out/boot-production-camera-splash.img`（SHA256 `d92a1ebf…`）。
+- rootfs 分区 `/dev/sda35`；ext4 4096 字节块；当前 boot_b 为源构建的
+  `out/boot-production-final.img`（SHA256 `8d6447a7…`，42 MB 固件 initrd）；
+  回滚 `out/boot-production-camera-splash.img`（`d92a1ebf…`）。
+- 新的 GNOME rootfs 镜像（sparse `e21cb3d6…`、gz `5d40aad8…`、e2fsck
+  通过、88,986 文件）已构建但**未刷入**；当前运行的是旧 rootfs。
 - 救援通道：USB NCM（`usb-gadget.service`，手机 172.16.42.1）；OTG 角色
   自动切换由 DTB 的 `dr_mode="otg"` + `80-alioth-usb-gadget.rules` 负责。
 

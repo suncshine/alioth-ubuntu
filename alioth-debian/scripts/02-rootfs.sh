@@ -60,7 +60,7 @@ command -v sudo >/dev/null || die "sudo missing"
 # Minimal but complete GNOME desktop.  Recommends are disabled by mmdebstrap;
 # the user-visible apps come from files/desktop-apps.txt below.
 BASE_PKGS="
-systemd systemd-sysv udev kmod initramfs-tools busybox
+systemd systemd-sysv udev kmod initramfs-tools busybox gzip zstd
 network-manager openssh-server sudo passwd vim-tiny locales ca-certificates
 dropbear-initramfs libcap2-bin
 alsa-utils alsa-ucm-conf pipewire pipewire-pulse wireplumber
@@ -269,11 +269,26 @@ sudo install -Dm644 "$FILES/qbootctl.service" "$ROOTFS/etc/systemd/system/qbootc
 
 # initramfs rescue: USB NCM+ACM gadget + dropbear, so a failed root mount is
 # still reachable over the cable (172.16.42.1).
-sudo tee -a "$ROOTFS/etc/initramfs-tools/modules" >/dev/null < "$FILES/initramfs-modules"
+# Idempotent: --reuse-rootfs reruns this section.
+if ! grep -qxF libcomposite "$ROOTFS/etc/initramfs-tools/modules" 2>/dev/null; then
+  sudo tee -a "$ROOTFS/etc/initramfs-tools/modules" >/dev/null < "$FILES/initramfs-modules"
+fi
+# Keep MODULES=most (MODULES=dep cannot determine the root device in a
+# chroot), but stop the DSP remoteproc driver from auto-loading inside the
+# initramfs: the .mbn firmware lives in the rootfs, and an early failed probe
+# leaves adsp/slpi/cdsp offline for the whole boot.  The rootfs loads
+# qcom_q6v5_pas explicitly from modules-load.d after switch_root.
+sudo sed -i 's/^MODULES=.*/MODULES=most/' "$ROOTFS/etc/initramfs-tools/initramfs.conf"
+sudo install -Dm644 "$FILES/modprobe.d/alioth-remoteproc-initramfs.conf" \
+  "$ROOTFS/etc/modprobe.d/alioth-remoteproc-initramfs.conf"
 sudo install -Dm755 "$FILES/initramfs-usb-gadget" \
   "$ROOTFS/etc/initramfs-tools/scripts/init-premount/00-usb-gadget"
 sudo install -Dm755 "$FILES/initramfs-hook-usb-gadget" \
   "$ROOTFS/etc/initramfs-tools/hooks/usb-gadget"
+# MODULES=most puts qcom_q6v5_pas in the initramfs; include the firmware too so
+# an early remoteproc probe cannot fail (see files/initramfs-hook-remoteproc-fw).
+sudo install -Dm755 "$FILES/initramfs-hook-remoteproc-fw" \
+  "$ROOTFS/etc/initramfs-tools/hooks/remoteproc-fw"
 RESCUE_KEY="$WORK/private/rescue_authorized_keys"
 [ -f "$RESCUE_KEY" ] || RESCUE_KEY=/root/.ssh/authorized_keys
 if [ -f "$RESCUE_KEY" ]; then

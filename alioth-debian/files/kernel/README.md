@@ -1,9 +1,10 @@
 # Kernel artifact and configuration (7.2.0)
 
 The production boot images use a **locally rebuilt 7.2.0 kernel**.  The
-current build adds the first-frame backlight fix for the command-mode panel
-(see below); the previous artifact also carried `CONFIG_DEVFREQ_THERMAL=y` so
-the GPU devfreq cooling device registers.
+current build adds the first-frame backlight fix and the deferred brightness
+update fix for the command-mode panel (see below); the previous artifact also
+carried `CONFIG_DEVFREQ_THERMAL=y` so the GPU devfreq cooling device
+registers.
 
 ## Tracked here
 
@@ -19,6 +20,14 @@ the GPU devfreq cooling device registers.
   `defer_backlight_until_first_frame` in the alioth panel driver; applies on
   top of the Kupfer panel patch. SHA256
   `b93c129fd95bb9b9c6f0b1a588732ea67f58d4a4cc93bbf98c59e22612511349`.
+- `0003-drm-notify-panel-after-every-frame.patch` — adds the per-frame
+  `frame_done` panel/bridge callback and calls the bridge chain after every
+  DPU frame-done event, not only after the first one. SHA256
+  `e9d1208095ffa57a1e7746ca200ce5593b3b52b8831a835d3a53ada33ec8e125`.
+- `0004-panel-samsung-ams667xx01-defer-brightness-updates.patch` — defers
+  DCS brightness commands in the alioth panel driver until the DSI link is
+  idle. SHA256
+  `04c565b7d280639affa76ac47ffafb8fed51f23f8e4232973829965641f0c672`.
 - `README.md` — this file.
 
 ## First-frame backlight fix
@@ -58,15 +67,51 @@ the OF modalias once and log `Driver 'panel-samsung-ams667xx01' is already
 registered`; this is harmless but will disappear once the stale module is
 dropped from the rootfs/initramfs (tracked as tech debt in AGENTS.md).
 
+## Brightness update race
+
+Dragging the brightness slider in GNOME sends a stream of DCS brightness
+commands to the panel.  On this command-mode panel the DSI link is busy
+transmitting MDP frames, and a DCS command issued while a frame is in flight
+makes the DSI HS FIFOs underflow (`dsi_err_worker status=5`).  The corrupted
+transfer is visible as white line stripes across the screen; they disappear
+when the brightness slider is released and the frame stream settles.
+
+kprobes showed that errored command commits happened 3.9-26 ms after the
+last frame-done event, i.e. exactly while the next frame was being
+transferred.  Blocking the DMA trigger within the frame
+(`DSI_TRIG_CTRL_BLOCK_DMA_WITHIN_FRAME`) did not help.
+
+The fix serialises brightness updates with frame transfers:
+
+1. `drm_panel` and `drm_bridge` gain an optional per-frame `frame_done`
+   callback, forwarded by the panel bridge; `dpu_crtc` calls the bridge chain
+   after every `DPU_ENCODER_FRAME_EVENT_DONE`.
+2. The alioth panel driver stores the requested brightness under a mutex
+   instead of sending it from the backlight callback.  `frame_done` flushes
+   the pending value while the DSI link is idle.
+3. A 30 ms delayed work flushes the value on a static screen where no frame
+   events arrive.  A 40 ms recent-frame guard reschedules that fallback while
+   frames are still flowing, so it cannot race with boot-time frame
+   transfers.
+
+An 8 s stress test (brightness written every 10 ms, workspace toggled every
+0.45 s) produced 17-24 `dsi_err_worker status=5` errors before the fix and
+none after it; ordinary slider use is visually clean.
+
 ## Artifacts
 
-- First-frame `Image.gz`: 14,727,626 B, SHA256
-  `a53411d9687a6c8261e19227a03a10925d11ecbda31eb635c09ac61e0a157b6d`.
-- Production boot image `out/boot-production-firstframe.img`: 58,687,488 B,
-  SHA256 `70519c4cd6768ea108198d1b477d5af8bbe2a0eab1a8d46042e385a3e0122404`.
-  Its appended DTB (`a5c3be61…`) and 42 MB initrd (`afb37c1b…`, with DSP
-  firmware) are byte-identical to `boot-production-final.img`; only the
-  kernel changed.
+- Current `Image.gz`: 14,729,673 B, SHA256
+  `d9fef4f460d80b7ec617abff4f7074131c37b4a74f8f02dc83bd26a8f006e969`.
+- Production boot image
+  `out/boot-production-firstframe-brightness-final.img`: 58,691,584 B,
+  SHA256 `ad56b642b7c34e784f4455f4a444d097d14ce7bf01a23ab4ba680c3fb9825d6e`.
+  It was built with the same appended DTB (`a5c3be61…`) and initrd
+  (`afb37c1b…`, with DSP firmware) as the first-frame image; only the kernel
+  changed.
+- Previous first-frame artifact: `Image.gz` 14,727,626 B, SHA256
+  `a53411d9687a6c8261e19227a03a10925d11ecbda31eb635c09ac61e0a157b6d`;
+  boot image `out/boot-production-firstframe.img`: 58,687,488 B, SHA256
+  `70519c4cd6768ea108198d1b477d5af8bbe2a0eab1a8d46042e385a3e0122404`.
 - Pre-fix artifact (kept for rollback): `Image.gz` 14,724,749 B, SHA256
   `54b4b14a4c533fd6b4cd18c66eb8b0093ce44f9817296ab1239b6ac9748b8292`;
   boot image `out/boot-production-final.img`, SHA256 `8d6447a7…`.
@@ -94,6 +139,8 @@ patch -Np1 -d linux < \
   references/kupfer-alioth-builds/patches/gitlab.postmarketos.org/soc/qualcomm-sm8250/linux/0001-Added-POCO-F3-dts-panel-and-touchscreen-drivers.patch
 patch -Np1 -d linux < alioth-debian/files/kernel/0001-drm-delay-backlight-until-first-frame.patch
 patch -Np1 -d linux < alioth-debian/files/kernel/0002-panel-samsung-ams667xx01-delay-backlight.patch
+patch -Np1 -d linux < alioth-debian/files/kernel/0003-drm-notify-panel-after-every-frame.patch
+patch -Np1 -d linux < alioth-debian/files/kernel/0004-panel-samsung-ams667xx01-defer-brightness-updates.patch
 cat alioth-debian/files/kernel/config.fragment >> linux/.config
 make -C linux olddefconfig
 make -C linux -j$(nproc) Image.gz
@@ -114,5 +161,5 @@ KERNEL_IMG=/path/to/Image.gz ALLOW_OTHER_KERNEL=1 \
 ```
 
 `16-production-boot-source.sh` checks the kernel hash against
-`EXPECTED_KERNEL_SHA`; it is set to the first-frame artifact.  Use
+`EXPECTED_KERNEL_SHA`; it is set to the current brightness-fix artifact.  Use
 `ALLOW_OTHER_KERNEL=1` for local rebuilds.

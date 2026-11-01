@@ -57,9 +57,9 @@ KERNEL_IMG=/root/kernel-build/linux/arch/arm64/boot/Image.gz \
 # 不设置 WIFI_MAC 时生成不含 local-mac-address 的通用镜像
 ```
 
-当前生产内核（`a53411d9…`）包含熄屏亮屏花屏修复，并内建
+当前生产内核（`d9fef4f4…`）包含熄屏亮屏花屏修复和亮度调节白线修复，并内建
 `panel-samsung-ams667xx01`；`14-production-boot.sh` 只重放旧基底，产物是
-**没有该修复的旧内核**，仅用于逐字节复现历史镜像/回滚。内核 artifact 的
+**没有这些修复的旧内核**，仅用于逐字节复现历史镜像/回滚。内核 artifact 的
 来源、补丁、哈希和配置见 `files/kernel/README.md`。
 
 ### B. 生产 rootfs image

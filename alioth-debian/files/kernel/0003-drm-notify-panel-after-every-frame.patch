@@ -1,0 +1,173 @@
+--- orig/drivers/gpu/drm/bridge/panel.c
++++ mod/drivers/gpu/drm/bridge/panel.c
+@@ -210,6 +210,13 @@
+ 	struct panel_bridge *panel_bridge = drm_bridge_to_panel_bridge(bridge);
+ 
+ 	drm_panel_first_frame_done(panel_bridge->panel);
++}
++
++static void panel_bridge_frame_done(struct drm_bridge *bridge)
++{
++	struct panel_bridge *panel_bridge = drm_bridge_to_panel_bridge(bridge);
++
++	drm_panel_frame_done(panel_bridge->panel);
+ }
+ 
+ static const struct drm_bridge_funcs panel_bridge_bridge_funcs = {
+@@ -218,6 +225,7 @@
+ 	.atomic_pre_enable = panel_bridge_atomic_pre_enable,
+ 	.atomic_enable = panel_bridge_atomic_enable,
+ 	.first_frame_done = panel_bridge_first_frame_done,
++	.frame_done = panel_bridge_frame_done,
+ 	.atomic_disable = panel_bridge_atomic_disable,
+ 	.atomic_post_disable = panel_bridge_atomic_post_disable,
+ 	.get_modes = panel_bridge_get_modes,
+--- orig/drivers/gpu/drm/drm_bridge.c
++++ mod/drivers/gpu/drm/drm_bridge.c
+@@ -1057,6 +1057,25 @@
+ }
+ EXPORT_SYMBOL(drm_bridge_chain_first_frame_done);
+ 
++/**
++ * drm_bridge_chain_frame_done - notify bridges that a frame was transmitted
++ * @encoder: encoder whose bridge chain transmitted the frame
++ *
++ * Calls &drm_bridge_funcs.frame_done for all the bridges in the encoder
++ * chain, starting from the first bridge to the last. Display drivers shall
++ * call this after each frame has been transmitted to the panel.
++ */
++void drm_bridge_chain_frame_done(struct drm_encoder *encoder)
++{
++	if (!encoder)
++		return;
++
++	drm_for_each_bridge_in_chain_scoped(encoder, bridge)
++		if (bridge->funcs->frame_done)
++			bridge->funcs->frame_done(bridge);
++}
++EXPORT_SYMBOL(drm_bridge_chain_frame_done);
++
+ static int drm_atomic_bridge_check(struct drm_bridge *bridge,
+ 				   struct drm_crtc_state *crtc_state,
+ 				   struct drm_connector_state *conn_state)
+--- orig/drivers/gpu/drm/drm_panel.c
++++ mod/drivers/gpu/drm/drm_panel.c
+@@ -316,6 +316,24 @@
+ 	mutex_unlock(&panel->follower_lock);
+ }
+ EXPORT_SYMBOL(drm_panel_first_frame_done);
++
++/**
++ * drm_panel_frame_done - notify the panel that a frame was transmitted
++ * @panel: DRM panel
++ *
++ * Called by the display driver after a frame has been transmitted to the
++ * panel. For command-mode panels this can be used to flush deferred command
++ * updates, such as DCS brightness changes, when the DSI link is idle.
++ */
++void drm_panel_frame_done(struct drm_panel *panel)
++{
++	if (!panel)
++		return;
++
++	if (panel->frame_done)
++		panel->frame_done(panel);
++}
++EXPORT_SYMBOL(drm_panel_frame_done);
+ 
+ /**
+  * drm_panel_disable - disable a panel
+--- orig/include/drm/drm_bridge.h
++++ mod/include/drm/drm_bridge.h
+@@ -351,6 +351,17 @@
+ 	 * The @first_frame_done callback is optional.
+ 	 */
+ 	void (*first_frame_done)(struct drm_bridge *bridge);
++
++	/**
++	 * @frame_done:
++	 *
++	 * Called by the display driver after a frame has been transmitted. This
++	 * is used by command-mode panels to flush deferred command updates,
++	 * such as DCS brightness changes, while the DSI link is idle.
++	 *
++	 * The @frame_done callback is optional.
++	 */
++	void (*frame_done)(struct drm_bridge *bridge);
+ 
+ 	/**
+ 	 * @atomic_disable:
+@@ -1577,6 +1588,7 @@
+ 				    struct drm_atomic_commit *state);
+ 
+ void drm_bridge_chain_first_frame_done(struct drm_encoder *encoder);
++void drm_bridge_chain_frame_done(struct drm_encoder *encoder);
+ 
+ u32 *
+ drm_atomic_helper_bridge_propagate_bus_fmt(struct drm_bridge *bridge,
+--- orig/include/drm/drm_panel.h
++++ mod/include/drm/drm_panel.h
+@@ -305,6 +305,16 @@
+ 	bool backlight_deferred;
+ 
+ 	/**
++	 * @frame_done:
++	 *
++	 * Optional callback invoked after a frame has been transmitted to the
++	 * panel. Panel drivers can use it to defer work that must not race
++	 * with the frame transfer, such as DCS brightness updates on
++	 * command-mode panels.
++	 */
++	void (*frame_done)(struct drm_panel *panel);
++
++	/**
+ 	 * @container: Pointer to the private driver struct embedding this
+ 	 * @struct drm_panel.
+ 	 */
+@@ -355,6 +365,7 @@
+ void drm_panel_enable(struct drm_panel *panel);
+ void drm_panel_disable(struct drm_panel *panel);
+ void drm_panel_first_frame_done(struct drm_panel *panel);
++void drm_panel_frame_done(struct drm_panel *panel);
+ 
+ int drm_panel_get_modes(struct drm_panel *panel, struct drm_connector *connector);
+ 
+--- orig/drivers/gpu/drm/msm/disp/dpu1/dpu_crtc.c
++++ mod/drivers/gpu/drm/msm/disp/dpu1/dpu_crtc.c
+@@ -693,18 +693,30 @@
+ 		DPU_ERROR("crtc%d ts:%lld received panel dead event\n",
+ 				crtc->base.id, ktime_to_ns(fevent->ts));
+ 
+-	if (frame_done && atomic_xchg(&dpu_crtc->first_frame_pending, 0)) {
++	if (frame_done) {
+ 		struct drm_encoder *encoder;
++
++		if (atomic_xchg(&dpu_crtc->first_frame_pending, 0)) {
++			/*
++			 * The first frame after this CRTC was enabled has
++			 * reached the panel. Command-mode panels need this to
++			 * turn on their backlight only after their internal
++			 * frame memory has been updated, otherwise uninitialized
++			 * memory is visible.
++			 */
++			drm_for_each_encoder_mask(encoder, crtc->dev,
++						  crtc->state->encoder_mask)
++				drm_bridge_chain_first_frame_done(encoder);
++		}
+ 
+ 		/*
+-		 * The first frame after this CRTC was enabled has reached the
+-		 * panel. Command-mode panels need this to turn on their
+-		 * backlight only after their internal frame memory has been
+-		 * updated, otherwise uninitialized memory is visible.
++		 * Notify every frame so that command-mode panels can flush
++		 * deferred DCS updates while no MDP transfer is in flight,
++		 * avoiding DSI FIFO underflows during brightness changes.
+ 		 */
+ 		drm_for_each_encoder_mask(encoder, crtc->dev,
+ 					  crtc->state->encoder_mask)
+-			drm_bridge_chain_first_frame_done(encoder);
++			drm_bridge_chain_frame_done(encoder);
+ 	}
+ 
+ 	if (frame_done)

@@ -6,7 +6,8 @@ Redmi K40 / POCO F3（`alioth`，SM8250）上的 **Ubuntu 26.04 LTS arm64 +
 
 当前实机可用：显示/触控、WiFi（固定 MAC）、蓝牙、音频（扬声器 + 四路麦）、
 IMX582 主摄 + DW9800 手动对焦、SSC 传感器（加速度/光感/罗盘）、GPU 温控、
-电源键、充电阈值、USB NCM/OTG 救援通道。详见 `AGENTS.md` 与 `BUILD-LOG.md`。
+电源键、充电阈值、2 GiB zstd zram swap（无磁盘 swap）、USB NCM/OTG 救援
+通道。详见 `AGENTS.md` 与 `BUILD-LOG.md`。
 
 ## 脚本与执行位置
 
@@ -92,8 +93,10 @@ qbootctl；无需 `downloads/` 与 VM。`--build-daemons` 可在干净 VM 上从
 - rootfs 分区 `/dev/sda35`；ext4 4096 字节块；当前 boot_b 为源构建的
   `out/boot-production-final.img`（SHA256 `8d6447a7…`，42 MB 固件 initrd）；
   回滚 `out/boot-production-camera-splash.img`（`d92a1ebf…`）。
-- 新的 GNOME rootfs 镜像（sparse `e21cb3d6…`、gz `5d40aad8…`、e2fsck
-  通过、88,986 文件）已构建但**未刷入**；当前运行的是旧 rootfs。
+- 新的 GNOME rootfs 镜像（sparse `f20ac75a…`、gz `77499e53…`、e2fsck
+  通过、89,006 文件，含 2 GiB zram）已构建但**未刷入**；当前运行的是旧
+  rootfs。系统没有磁盘 swap（无 swap 分区/swapfile/fstab 条目），只有
+  zram。
 - 救援通道：USB NCM（`usb-gadget.service`，手机 172.16.42.1）；OTG 角色
   自动切换由 DTB 的 `dr_mode="otg"` + `80-alioth-usb-gadget.rules` 负责。
 

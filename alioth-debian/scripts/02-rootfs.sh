@@ -60,7 +60,7 @@ command -v sudo >/dev/null || die "sudo missing"
 # Minimal but complete GNOME desktop.  Recommends are disabled by mmdebstrap;
 # the user-visible apps come from files/desktop-apps.txt below.
 BASE_PKGS="
-systemd systemd-sysv udev kmod initramfs-tools busybox gzip zstd
+systemd systemd-sysv udev kmod initramfs-tools busybox gzip zstd systemd-zram-generator
 network-manager openssh-server sudo passwd vim-tiny locales ca-certificates
 dropbear-initramfs libcap2-bin
 alsa-utils alsa-ucm-conf pipewire pipewire-pulse wireplumber
@@ -191,6 +191,8 @@ sudo install -Dm644 "$FILES/rules/81-libssc-xiaomi-alioth.rules" "$ROOTFS/usr/li
 sudo install -Dm644 "$FILES/rules/wifi-powersave.conf" "$ROOTFS/etc/NetworkManager/conf.d/"
 sudo install -Dm644 "$FILES/machine-info" "$ROOTFS/etc/machine-info"
 sudo install -Dm644 "$FILES/51-qcom.conf" "$ROOTFS/usr/share/wireplumber/wireplumber.conf.d/51-qcom.conf"
+# 2 GiB zstd zram swap; the generator creates it at boot (no disk swap).
+sudo install -Dm644 "$FILES/zram-generator.conf" "$ROOTFS/etc/systemd/zram-generator.conf"
 sudo tee "$ROOTFS/etc/NetworkManager/conf.d/usb0-unmanaged.conf" >/dev/null <<EOF
 [keyfile]
 unmanaged-devices=interface-name:usb0

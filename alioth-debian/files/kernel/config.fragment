@@ -1,3 +1,7 @@
 # alioth build-time additions on top of the Kupfer sm8250 7.2.0 config.
 # Needed for the GPU devfreq cooling device (GPU thermal throttling).
 CONFIG_DEVFREQ_THERMAL=y
+# Build the panel driver in so the first-frame backlight fix is part of
+# Image.gz.  The driver source/Kconfig come from the alioth panel patch
+# archived under references/ and files/kernel/0001-*.patch.
+CONFIG_DRM_PANEL_SAMSUNG_AMS667XX01=y

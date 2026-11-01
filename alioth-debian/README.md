@@ -23,7 +23,7 @@ IMX582 主摄 + DW9800 手动对焦、SSC 传感器（加速度/光感/罗盘）
 | `scripts/13-camera-dtb.sh` | macOS/Linux | 删除无驱动的 CAMSS port@0/2/4，保留 IMX582 |
 | `scripts/10-splash-mem.sh` | macOS/Linux | 保留 ABL 开机 Logo 帧缓冲（幂等；源 DTS 已含节点） |
 | `scripts/14-production-boot.sh` | macOS/Linux | 从 audio 基底重放 BT/WiFi/相机/splash，逐字节复现生产 boot image |
-| `scripts/16-production-boot-source.sh` | macOS/Linux | 从 tracked DTS + thermal Image.gz + initrd 重新构建生产 boot image；不设 `WIFI_MAC` 时生成通用镜像 |
+| `scripts/16-production-boot-source.sh` | macOS/Linux | 从 tracked DTS + first-frame Image.gz + initrd 重新构建生产 boot image；不设 `WIFI_MAC` 时生成通用镜像 |
 | `scripts/17-inject-rescue-key.sh` | macOS/Linux | 把救援 SSH 公钥注入 boot image 的 initramfs |
 | `tools/inject-initramfs-key.py` | 任意 | `17-inject-rescue-key.sh` 的底层实现 |
 | `scripts/13-camera-modules.sh` | 手机或 `--root` | 编译/安装 imx582+dw9800（固定 build dir，优先 gcc-16） |
@@ -47,7 +47,7 @@ WIFI_MAC=xx:xx:xx:xx:xx:xx      # 从 persist /dev/sda22 的 wlan_mac.bin 读取
   --output out/boot-production-final.img
 ```
 
-从源码重建（tracked DTS + thermal 内核 + initrd）：
+从源码重建（tracked DTS + 当前生产内核 + initrd）：
 
 ```bash
 KSRC=/root/kernel-build/linux \
@@ -57,7 +57,10 @@ KERNEL_IMG=/root/kernel-build/linux/arch/arm64/boot/Image.gz \
 # 不设置 WIFI_MAC 时生成不含 local-mac-address 的通用镜像
 ```
 
-内核 artifact 的来源、哈希和配置见 `files/kernel/README.md`。
+当前生产内核（`a53411d9…`）包含熄屏亮屏花屏修复，并内建
+`panel-samsung-ams667xx01`；`14-production-boot.sh` 只重放旧基底，产物是
+**没有该修复的旧内核**，仅用于逐字节复现历史镜像/回滚。内核 artifact 的
+来源、补丁、哈希和配置见 `files/kernel/README.md`。
 
 ### B. 生产 rootfs image
 

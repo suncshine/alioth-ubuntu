@@ -3,7 +3,8 @@
 #
 # Unlike 14-production-boot.sh (which replays the post-processing chain from an
 # already-built audio image), this script starts from:
-#   * KERNEL_IMG  the locally rebuilt 7.2.0 Image.gz (DEVFREQ_THERMAL=y)
+#   * KERNEL_IMG  the locally rebuilt 7.2.0 Image.gz (DEVFREQ_THERMAL=y and
+#                 the first-frame backlight fix; panel driver built in)
 #   * the tracked files/audio/sm8250-xiaomi-alioth-audio.dts DTB, compiled here
 #   * INITRD      out/initrd.img produced by 03-initramfs.sh
 # then adds the Wi-Fi MAC and the camera-port pruning.
@@ -20,7 +21,8 @@
 #     WIFI_MAC=aa:bb:cc:dd:ee:ff ./16-production-boot-source.sh
 #
 # Env:
-#   KERNEL_IMG  default out/kernel/Image.gz.thermal, then the phone's
+#   KERNEL_IMG  default out/kernel/Image.gz.firstframe, then the older
+#               out/kernel/Image.gz.thermal, then the phone's
 #               /root/kernel-build/linux/arch/arm64/boot/Image.gz
 #   AUDIO_DTB   default out/kernel/audio.dtb; built with 07-audio-dtb.sh
 #               (DTB_ONLY=1) when missing
@@ -38,7 +40,8 @@
 set -euo pipefail
 . "$(dirname "$0")/env.sh"
 
-KERNEL_IMG="${KERNEL_IMG:-$OUT/kernel/Image.gz.thermal}"
+KERNEL_IMG="${KERNEL_IMG:-$OUT/kernel/Image.gz.firstframe}"
+[ -f "$KERNEL_IMG" ] || KERNEL_IMG="$OUT/kernel/Image.gz.thermal"
 AUDIO_DTB="${AUDIO_DTB:-$OUT/kernel/audio.dtb}"
 INITRD_IMG="${INITRD_IMG:-$INITRD}"
 BOOT_CMDLINE="${BOOT_CMDLINE:-$CMDLINE}"
@@ -47,7 +50,9 @@ KSRC="${KSRC:-/tmp/alioth-kernel-check/src}"
 if [ ! -d "$KSRC/include/dt-bindings" ] && [ -d "$WORK/kernel-src/include/dt-bindings" ]; then
   KSRC="$WORK/kernel-src"
 fi
-EXPECTED_KERNEL_SHA="54b4b14a4c533fd6b4cd18c66eb8b0093ce44f9817296ab1239b6ac9748b8292"
+# First-frame backlight fix (see files/kernel/README.md).  The previous
+# thermal-only artifact was 54b4b14a4c533fd6b4cd18c66eb8b0093ce44f9817296ab1239b6ac9748b8292.
+EXPECTED_KERNEL_SHA="a53411d9687a6c8261e19227a03a10925d11ecbda31eb635c09ac61e0a157b6d"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 log() { echo "==> $*"; }

@@ -1,0 +1,19 @@
+diff -Nur panel-orig/drivers/gpu/drm/panel/panel-samsung-ams667xx01.c panel-mod/drivers/gpu/drm/panel/panel-samsung-ams667xx01.c
+--- panel-orig/drivers/gpu/drm/panel/panel-samsung-ams667xx01.c	2026-11-01 13:59:48
++++ panel-mod/drivers/gpu/drm/panel/panel-samsung-ams667xx01.c	2026-11-01 13:59:48
+@@ -468,6 +468,15 @@
+ 
+ 	ctx->panel.prepare_prev_first = true;
+ 
++	/*
++	 * This is a command-mode panel whose internal frame memory contains
++	 * undefined data when it is powered up. The vendor DT describes it
++	 * with qcom,bl-update-flag = "delay_until_first_frame": the backlight
++	 * must stay off until the first frame has been transferred, otherwise
++	 * the garbage in the frame memory is visible on screen.
++	 */
++	ctx->panel.defer_backlight_until_first_frame = true;
++
+ 	ctx->panel.backlight = ams667xx01_create_backlight(dsi);
+ 	if (IS_ERR(ctx->panel.backlight))
+ 		return dev_err_probe(dev, PTR_ERR(ctx->panel.backlight),

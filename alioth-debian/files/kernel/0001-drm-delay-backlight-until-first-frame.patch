@@ -1,0 +1,252 @@
+--- orig/drivers/gpu/drm/bridge/panel.c	2026-11-01 13:58:33
++++ mod/drivers/gpu/drm/bridge/panel.c	2026-11-01 13:59:07
+@@ -203,6 +203,13 @@
+ 	root = debugfs_create_dir("panel", root);
+ 	if (panel->funcs->debugfs_init)
+ 		panel->funcs->debugfs_init(panel, root);
++}
++
++static void panel_bridge_first_frame_done(struct drm_bridge *bridge)
++{
++	struct panel_bridge *panel_bridge = drm_bridge_to_panel_bridge(bridge);
++
++	drm_panel_first_frame_done(panel_bridge->panel);
+ }
+ 
+ static const struct drm_bridge_funcs panel_bridge_bridge_funcs = {
+@@ -210,6 +217,7 @@
+ 	.detach = panel_bridge_detach,
+ 	.atomic_pre_enable = panel_bridge_atomic_pre_enable,
+ 	.atomic_enable = panel_bridge_atomic_enable,
++	.first_frame_done = panel_bridge_first_frame_done,
+ 	.atomic_disable = panel_bridge_atomic_disable,
+ 	.atomic_post_disable = panel_bridge_atomic_post_disable,
+ 	.get_modes = panel_bridge_get_modes,
+--- orig/drivers/gpu/drm/drm_bridge.c	2026-11-01 13:58:32
++++ mod/drivers/gpu/drm/drm_bridge.c	2026-11-01 13:59:01
+@@ -1036,7 +1036,27 @@
+ 		}
+ }
+ EXPORT_SYMBOL(drm_atomic_bridge_chain_enable);
++
++/**
++ * drm_bridge_chain_first_frame_done - notify bridges of the first frame
++ * @encoder: encoder whose bridge chain transmitted the frame
++ *
++ * Calls &drm_bridge_funcs.first_frame_done for all the bridges in the
++ * encoder chain, starting from the first bridge to the last. Display drivers
++ * shall call this after the first frame following a display enable has been
++ * transmitted to the panel.
++ */
++void drm_bridge_chain_first_frame_done(struct drm_encoder *encoder)
++{
++	if (!encoder)
++		return;
+ 
++	drm_for_each_bridge_in_chain_scoped(encoder, bridge)
++		if (bridge->funcs->first_frame_done)
++			bridge->funcs->first_frame_done(bridge);
++}
++EXPORT_SYMBOL(drm_bridge_chain_first_frame_done);
++
+ static int drm_atomic_bridge_check(struct drm_bridge *bridge,
+ 				   struct drm_crtc_state *crtc_state,
+ 				   struct drm_connector_state *conn_state)
+--- orig/drivers/gpu/drm/drm_panel.c	2026-11-01 13:58:32
++++ mod/drivers/gpu/drm/drm_panel.c	2026-11-01 13:58:49
+@@ -236,6 +236,9 @@
+  * this call completes. This function cannot fail (as it is called from the
+  * enable call chain). There will always be a call to drm_panel_disable()
+  * afterwards.
++ *
++ * For panels with &drm_panel.defer_backlight_until_first_frame set, the
++ * backlight is left off and enabled later by drm_panel_first_frame_done().
+  */
+ void drm_panel_enable(struct drm_panel *panel)
+ {
+@@ -259,10 +262,14 @@
+ 	}
+ 	panel->enabled = true;
+ 
+-	ret = backlight_enable(panel->backlight);
+-	if (ret < 0)
+-		DRM_DEV_INFO(panel->dev, "failed to enable backlight: %d\n",
+-			     ret);
++	if (panel->backlight && panel->defer_backlight_until_first_frame) {
++		panel->backlight_deferred = true;
++	} else {
++		ret = backlight_enable(panel->backlight);
++		if (ret < 0)
++			DRM_DEV_INFO(panel->dev,
++				     "failed to enable backlight: %d\n", ret);
++	}
+ 
+ 	list_for_each_entry(follower, &panel->followers, list) {
+ 		if (!follower->funcs->panel_enabled)
+@@ -280,6 +287,37 @@
+ EXPORT_SYMBOL(drm_panel_enable);
+ 
+ /**
++ * drm_panel_first_frame_done - first frame after enable was transmitted
++ * @panel: DRM panel
++ *
++ * Called by the display driver once the first frame following
++ * drm_panel_enable() has been transmitted to the panel. For panels with
++ * &drm_panel.defer_backlight_until_first_frame set this enables the
++ * backlight, which was deliberately kept off to hide the undefined contents
++ * of the panel's internal frame memory.
++ */
++void drm_panel_first_frame_done(struct drm_panel *panel)
++{
++	int ret;
++
++	if (!panel)
++		return;
++
++	mutex_lock(&panel->follower_lock);
++
++	if (panel->backlight_deferred) {
++		panel->backlight_deferred = false;
++		ret = backlight_enable(panel->backlight);
++		if (ret < 0)
++			DRM_DEV_INFO(panel->dev,
++				     "failed to enable backlight: %d\n", ret);
++	}
++
++	mutex_unlock(&panel->follower_lock);
++}
++EXPORT_SYMBOL(drm_panel_first_frame_done);
++
++/**
+  * drm_panel_disable - disable a panel
+  * @panel: DRM panel
+  *
+@@ -321,6 +359,7 @@
+ 				 follower->funcs->panel_disabling, ret);
+ 	}
+ 
++	panel->backlight_deferred = false;
+ 	ret = backlight_disable(panel->backlight);
+ 	if (ret < 0)
+ 		DRM_DEV_INFO(panel->dev, "failed to disable backlight: %d\n",
+--- orig/include/drm/drm_bridge.h	2026-11-01 13:58:32
++++ mod/include/drm/drm_bridge.h	2026-11-01 13:58:59
+@@ -338,6 +338,20 @@
+ 	 */
+ 	void (*atomic_enable)(struct drm_bridge *bridge,
+ 			      struct drm_atomic_commit *state);
++
++	/**
++	 * @first_frame_done:
++	 *
++	 * Called by the display driver after the first frame following the
++	 * enable of the display pipeline has been transmitted, i.e. after the
++	 * hardware has consumed all pixels of that frame. This is used by
++	 * command-mode panels which must not be made visible before their
++	 * internal frame memory has been updated.
++	 *
++	 * The @first_frame_done callback is optional.
++	 */
++	void (*first_frame_done)(struct drm_bridge *bridge);
++
+ 	/**
+ 	 * @atomic_disable:
+ 	 *
+@@ -1562,6 +1576,8 @@
+ void drm_atomic_bridge_chain_enable(struct drm_bridge *bridge,
+ 				    struct drm_atomic_commit *state);
+ 
++void drm_bridge_chain_first_frame_done(struct drm_encoder *encoder);
++
+ u32 *
+ drm_atomic_helper_bridge_propagate_bus_fmt(struct drm_bridge *bridge,
+ 					struct drm_bridge_state *bridge_state,
+--- orig/include/drm/drm_panel.h	2026-11-01 13:58:31
++++ mod/include/drm/drm_panel.h	2026-11-01 13:58:39
+@@ -283,6 +283,28 @@
+ 	bool enabled;
+ 
+ 	/**
++	 * @defer_backlight_until_first_frame:
++	 *
++	 * If true, drm_panel_enable() will not enable the backlight. Instead
++	 * the backlight is left off until drm_panel_first_frame_done() is
++	 * called by the display driver, after the first frame following the
++	 * panel enable has been transmitted to the panel.
++	 *
++	 * This is needed by command-mode panels whose internal frame memory
++	 * contains undefined data when powered up: making the panel visible
++	 * before that memory has been updated shows garbage on screen.
++	 */
++	bool defer_backlight_until_first_frame;
++
++	/**
++	 * @backlight_deferred:
++	 *
++	 * If true, the backlight enable was deferred by drm_panel_enable()
++	 * and still has to be performed by drm_panel_first_frame_done().
++	 */
++	bool backlight_deferred;
++
++	/**
+ 	 * @container: Pointer to the private driver struct embedding this
+ 	 * @struct drm_panel.
+ 	 */
+@@ -332,6 +354,7 @@
+ 
+ void drm_panel_enable(struct drm_panel *panel);
+ void drm_panel_disable(struct drm_panel *panel);
++void drm_panel_first_frame_done(struct drm_panel *panel);
+ 
+ int drm_panel_get_modes(struct drm_panel *panel, struct drm_connector *connector);
+ 
+--- orig/drivers/gpu/drm/msm/disp/dpu1/dpu_crtc.c	2026-11-01 14:06:29
++++ mod/drivers/gpu/drm/msm/disp/dpu1/dpu_crtc.c	2026-11-01 14:06:42
+@@ -14,6 +14,7 @@
+ 
+ #include <drm/drm_atomic.h>
+ #include <drm/drm_blend.h>
++#include <drm/drm_bridge.h>
+ #include <drm/drm_crtc.h>
+ #include <drm/drm_flip_work.h>
+ #include <drm/drm_framebuffer.h>
+@@ -691,6 +692,20 @@
+ 	if (fevent->event & DPU_ENCODER_FRAME_EVENT_PANEL_DEAD)
+ 		DPU_ERROR("crtc%d ts:%lld received panel dead event\n",
+ 				crtc->base.id, ktime_to_ns(fevent->ts));
++
++	if (frame_done && atomic_xchg(&dpu_crtc->first_frame_pending, 0)) {
++		struct drm_encoder *encoder;
++
++		/*
++		 * The first frame after this CRTC was enabled has reached the
++		 * panel. Command-mode panels need this to turn on their
++		 * backlight only after their internal frame memory has been
++		 * updated, otherwise uninitialized memory is visible.
++		 */
++		drm_for_each_encoder_mask(encoder, crtc->dev,
++					  crtc->state->encoder_mask)
++			drm_bridge_chain_first_frame_done(encoder);
++	}
+ 
+ 	if (frame_done)
+ 		complete_all(&dpu_crtc->frame_done_comp);
+@@ -1294,6 +1309,7 @@
+ 
+ 	trace_dpu_crtc_enable(DRMID(crtc), true, dpu_crtc);
+ 	dpu_crtc->enabled = true;
++	atomic_set(&dpu_crtc->first_frame_pending, 1);
+ 
+ 	if (!old_crtc_state->self_refresh_active) {
+ 		drm_for_each_encoder_mask(encoder, crtc->dev, crtc->state->encoder_mask)
+--- orig/drivers/gpu/drm/msm/disp/dpu1/dpu_crtc.h	2026-11-01 14:06:30
++++ mod/drivers/gpu/drm/msm/disp/dpu1/dpu_crtc.h	2026-11-01 14:06:33
+@@ -172,6 +172,8 @@
+ 	struct list_head ad_active;
+ 
+ 	atomic_t frame_pending;
++	/* set on CRTC enable, cleared after the first frame was transmitted */
++	atomic_t first_frame_pending;
+ 	struct dpu_crtc_frame_event frame_events[DPU_CRTC_FRAME_EVENT_SIZE];
+ 	struct list_head frame_event_list;
+ 	spinlock_t spin_lock;

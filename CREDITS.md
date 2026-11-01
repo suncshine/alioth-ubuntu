@@ -2,6 +2,11 @@
 
 本项目使用了以下两个项目的成果，感谢作者。
 
+## 本仓库
+
+原创的脚本、文档与工具以 **GPL-2.0-only** 发布，见
+[LICENSE](LICENSE)。下列第三方文件保留其原始许可证，本仓库不重新授权。
+
 ## [Vae555/kupfer-alioth-builds](https://github.com/Vae555/kupfer-alioth-builds)
 
 - 提交：`14a5dfd`（2026-09-08，Vae555）

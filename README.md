@@ -29,3 +29,9 @@
   — deviceinfo、ALSA UCM、固件清单与设备规则。
 
 来源、固定提交与许可证见 [CREDITS.md](CREDITS.md)。
+
+## 许可证
+
+本项目原创部分以 **GPL-2.0-only** 发布，见 [LICENSE](LICENSE)。
+`references/` 与 `alioth-debian/files/` 中的第三方文件保留各自原许可证，
+详见 [CREDITS.md](CREDITS.md)。

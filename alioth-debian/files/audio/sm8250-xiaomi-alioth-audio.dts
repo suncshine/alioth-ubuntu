@@ -40,6 +40,9 @@
 
 	aliases {
 		serial0 = &uart6;
+		/* ABL keeps the boot logo at this address until the DPU driver takes over */
+		cont_splash_memory = "/reserved-memory/cont_splash_region@9c000000";
+		dfps_data_memory = "/reserved-memory/dfps_data_region@9e300000";
 	};
 
 	wcd938x: audio-codec {
@@ -199,6 +202,22 @@
 		cdsp_secure_heap: cdsp-secure-heap@8e100000 {
 			reg = <0x0 0x8e100000 0x0 0x4600000>;
 			no-map;
+		};
+
+		/*
+		 * ABL continues scanning the firmware boot logo out of this buffer
+		 * until the mainline DPU/DSI driver reinitialises the panel.  If
+		 * Linux is allowed to allocate it, the top half of the logo is
+		 * overwritten during early boot.  Keep it reserved.
+		 */
+		cont_splash_region@9c000000 {
+			reg = <0x0 0x9c000000 0x0 0x2300000>;
+			label = "cont_splash_region";
+		};
+
+		dfps_data_region@9e300000 {
+			reg = <0x0 0x9e300000 0x0 0x100000>;
+			label = "dfps_data_region";
 		};
 	};
 };

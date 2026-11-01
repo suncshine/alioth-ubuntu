@@ -43,7 +43,9 @@ ldconfig
 install -Dm755 "$WORK/usr/local/bin/ssccli" /usr/local/bin/ssccli
 install -Dm755 "$WORK/usr/local/bin/monitor-sensor" /usr/local/bin/monitor-sensor
 # Readiness gate: SSC discovery in iio-sensor-proxy does not retry.
-install -Dm755 "$(dirname "$0")/ssc-wait" /usr/local/bin/ssc-wait
+SSC_WAIT="$(dirname "$0")/ssc-wait"
+[ -f "$SSC_WAIT" ] || SSC_WAIT="$(dirname "$0")/../files/ssc-wait"
+install -Dm755 "$SSC_WAIT" /usr/local/bin/ssc-wait
 
 # Keep the distro iio-sensor-proxy binary untouched; run ours via drop-in.
 install -Dm755 "$WORK/usr/local/libexec/iio-sensor-proxy" \

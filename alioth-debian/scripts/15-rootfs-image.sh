@@ -81,4 +81,4 @@ if [ "$GZIP" -eq 1 ]; then
 fi
 
 echo "OK: $IMG"
-echo "Flash: initramfs SSH streaming or fastboot; see BUILD-LOG.md."
+echo "Flash: see alioth-debian/README.md (initramfs SSH streaming or fastboot)."

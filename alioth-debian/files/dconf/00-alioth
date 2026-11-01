@@ -1,0 +1,26 @@
+# alioth: system-wide GNOME defaults (Ubuntu session).
+# Installed by scripts/12-desktop-settings.sh on the phone and by
+# scripts/02-rootfs.sh when building a new rootfs.
+#
+# The power key is handled by /usr/local/sbin/alioth-powerkey; GNOME and
+# logind must not act on it themselves (see 90_alioth.gschema.override and
+# /etc/systemd/logind.conf.d/50-powerkey.conf).
+
+[org/gnome/desktop/session]
+idle-delay=uint32 300
+
+[org/gnome/settings-daemon/plugins/power]
+sleep-inactive-ac-type="nothing"
+sleep-inactive-battery-type="nothing"
+power-button-action="nothing"
+
+[org/gnome/desktop/a11y/applications]
+screen-keyboard-enabled=true
+
+[org/gnome/desktop/wm/preferences]
+button-layout=":minimize,maximize,close"
+
+[org/gnome/shell]
+favorite-apps=["org.gnome.Nautilus.desktop", "gnome-terminal.desktop", "org.gnome.TextEditor.desktop", "org.gnome.Calculator.desktop", "org.gnome.SystemMonitor.desktop", "org.gnome.Settings.desktop", "org.gnome.Yelp.desktop"]
+welcome-dialog-last-shown-version="50.1"
+

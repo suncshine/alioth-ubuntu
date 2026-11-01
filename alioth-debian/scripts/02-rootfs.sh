@@ -13,7 +13,7 @@ sudo rm -rf "$ROOTFS"
 # device-specific firmware still comes from the N1kroks tarball below.
 sudo mmdebstrap --arch=arm64 --variant=minbase \
   --components="$DEB_COMPONENTS" \
-  --include="systemd,systemd-sysv,udev,kmod,initramfs-tools,busybox,network-manager,openssh-server,sudo,passwd,vim-tiny,phosh,phosh-common,phosh-mobile-tweaks,phosh-osk-stevia,squeekboard,feedbackd,gnome-session-bin,gnome-settings-daemon,mesa-utils,mesa-vulkan-drivers,linux-firmware-qualcomm-graphics,linux-firmware-qualcomm-wireless,alsa-utils,alsa-ucm-conf,pipewire,wireplumber,iio-sensor-proxy,bluez,wpasupplicant,locales,ca-certificates,dropbear-initramfs,libcap2-bin" \
+  --include="systemd,systemd-sysv,udev,kmod,initramfs-tools,busybox,network-manager,openssh-server,sudo,passwd,vim-tiny,phosh,phosh-common,phosh-mobile-tweaks,phosh-osk-stevia,squeekboard,feedbackd,gnome-session-bin,gnome-settings-daemon,dconf-cli,mesa-utils,mesa-vulkan-drivers,linux-firmware-qualcomm-graphics,linux-firmware-qualcomm-wireless,alsa-utils,alsa-ucm-conf,pipewire,wireplumber,iio-sensor-proxy,bluez,wpasupplicant,locales,ca-certificates,dropbear-initramfs,libcap2-bin" \
   "$DEB_SUITE" "$ROOTFS" "$DEB_MIRROR"
 
 # 2. kernel modules ---------------------------------------------------------
@@ -91,6 +91,18 @@ else
 fi
 sudo install -Dm644 "$FILES/50-powerkey.conf" \
   "$ROOTFS/etc/systemd/logind.conf.d/50-powerkey.conf"
+
+# 6d. GNOME desktop defaults (dconf system database) -------------------------
+# idle-delay=300, power-button-action=nothing, screen-keyboard-enabled=true,
+# window buttons, favourites and proxy.  Live sessions are updated by
+# scripts/12-desktop-settings.sh; a new rootfs gets the values from here.
+sudo install -Dm644 "$FILES/dconf/00-alioth" \
+  "$ROOTFS/etc/dconf/db/local.d/00-alioth"
+if sudo chroot "$ROOTFS" test -x /usr/bin/dconf; then
+  sudo chroot "$ROOTFS" dconf update
+else
+  echo "WARN: dconf-cli missing — desktop defaults not compiled"
+fi
 
 # 7. system config -----------------------------------------------------------
 echo alioth | sudo tee "$ROOTFS/etc/hostname" >/dev/null

@@ -246,6 +246,30 @@ if sudo chroot "$ROOTFS" test -x /usr/bin/dconf; then
 else
   echo "WARN: dconf-cli missing — desktop defaults not compiled"
 fi
+# gnome-shell lists every udisks volume; hide the internal Android partitions
+# but keep USB storage visible (see the rule for the ID_BUS/label split).
+sudo install -Dm644 "$FILES/99-alioth-udisks-internal.rules" \
+  "$ROOTFS/etc/udev/rules.d/99-alioth-udisks-internal.rules"
+# Mutter puts the built-in panel's orientation under accelerometer control on
+# this phone, so the stored rotation alone is ignored with Rotation Lock on.
+# alioth-display-layout restores Landscape Left after each login.
+sudo install -Dm755 "$FILES/alioth-display-layout" \
+  "$ROOTFS/usr/local/bin/alioth-display-layout"
+sudo install -Dm644 "$FILES/monitors.xml" \
+  "$ROOTFS/usr/local/share/alioth/monitors.xml"
+sudo install -Dm644 "$FILES/alioth-display-layout.desktop" \
+  "$ROOTFS/etc/xdg/autostart/alioth-display-layout.desktop"
+# Copies kept for the post-boot 12-desktop-settings.sh helper.
+sudo install -Dm755 "$FILES/alioth-display-layout" \
+  "$ROOTFS/usr/local/share/alioth/alioth-display-layout"
+sudo install -Dm644 "$FILES/alioth-display-layout.desktop" \
+  "$ROOTFS/usr/local/share/alioth/alioth-display-layout.desktop"
+sudo install -Dm644 "$FILES/monitors.xml" \
+  "$ROOTFS/usr/local/share/alioth/monitors.xml"
+sudo install -Dm644 "$FILES/dconf/00-alioth" \
+  "$ROOTFS/usr/local/share/alioth/00-alioth"
+sudo install -Dm644 "$FILES/99-alioth-udisks-internal.rules" \
+  "$ROOTFS/usr/local/share/alioth/99-alioth-udisks-internal.rules"
 
 # GDM auto-login and display configuration.
 sudo install -Dm644 "$FILES/gdm/custom.conf" "$ROOTFS/etc/gdm3/custom.conf"
@@ -283,6 +307,11 @@ sudo install -Dm755 "$FILES/initramfs-hook-usb-gadget" \
 # an early remoteproc probe cannot fail (see files/initramfs-hook-remoteproc-fw).
 sudo install -Dm755 "$FILES/initramfs-hook-remoteproc-fw" \
   "$ROOTFS/etc/initramfs-tools/hooks/remoteproc-fw"
+# A redistributable image must not share dropbear host keys between devices
+# either.  dropbear -R generates them at boot; keep a stale copy out.
+sudo install -Dm644 "$FILES/dropbear-initramfs.conf" \
+  "$ROOTFS/etc/dropbear/initramfs/dropbear.conf"
+sudo rm -f "$ROOTFS"/etc/dropbear/initramfs/dropbear_*_host_key*
 RESCUE_KEY="$WORK/private/rescue_authorized_keys"
 if [ "$NO_RESCUE_KEY" -eq 1 ]; then
   log "rescue SSH key: skipped (--no-rescue-key)"

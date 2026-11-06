@@ -17,6 +17,22 @@ power-button-action="nothing"
 [org/gnome/desktop/a11y/applications]
 screen-keyboard-enabled=true
 
+# 手机作为横屏桌面使用：默认关闭 GNOME 自动旋转。Mutter 仍会把内置屏的
+# 方向交给加速度计管理（设置里的“方向”项因此隐藏），所以登录后的固定
+# Landscape Left 由 alioth-display-layout 应用。
+# 需要自动旋转时可在快捷设置里关闭 Rotation Lock。
+[org/gnome/settings-daemon/peripherals/touchscreen]
+orientation-lock=true
+
+# GDM 已自动登录；这里再关掉会话锁，空闲熄屏或电源键熄屏后亮屏直接回到
+# 桌面，不再要求输密码。lock-enabled 关掉自动锁屏，disable-lock-screen
+# 同时让 logind/电源键守护进程的显式 Lock 请求变成空操作。
+[org/gnome/desktop/screensaver]
+lock-enabled=false
+
+[org/gnome/desktop/lockdown]
+disable-lock-screen=true
+
 [org/gnome/desktop/wm/preferences]
 button-layout=":minimize,maximize,close"
 

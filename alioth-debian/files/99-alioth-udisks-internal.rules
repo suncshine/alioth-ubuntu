@@ -1,0 +1,15 @@
+# Hide the phone's internal (UFS) partitions from udisks, so GNOME's desktop
+# icons (DING) and Ubuntu Dock do not list the Android partition table as a
+# column of drive icons.  gvfs skips any block device whose udisks
+# "hint-ignore" is set.
+#
+# External storage must stay visible.  Do not test ID_BUS here: for a
+# non-removable USB mass-storage bridge 60-persistent-storage.rules runs
+# ata_id first and usb_id then leaves ID_BUS=ata untouched.  ID_USB_* is
+# always exported by usb_id for USB devices (and inherited by partitions),
+# so its absence is the reliable "internal" marker.
+#
+# The Ubuntu root filesystem is labelled "alioth" by 15-rootfs-image.sh and
+# is left visible to udisks.
+ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="partition", \
+  ENV{ID_USB_VENDOR_ID}!="?*", ENV{ID_FS_LABEL}!="alioth", ENV{UDISKS_IGNORE}="1"

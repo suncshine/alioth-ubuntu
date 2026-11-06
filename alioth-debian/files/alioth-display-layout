@@ -1,0 +1,96 @@
+#!/bin/sh
+# alioth-display-layout — keep the built-in DSI-1 panel in Landscape Left.
+#
+# GNOME 50 treats a touch device with an accelerometer as a tablet and lets the
+# accelerometer manage the built-in panel's orientation.  With Rotation Lock
+# enabled, Mutter has no sensor sample at session start and falls back to the
+# panel's native portrait mode; gnome-control-center also hides its "Display
+# rotation" row for built-in panels with an accelerometer.  This helper restores
+# the desktop layout after login and refreshes the stored monitors.xml.
+#
+# Installed at /usr/local/bin/alioth-display-layout and started from
+# /etc/xdg/autostart/alioth-display-layout.desktop.  It only talks to the
+# current user's session bus and is safe to run by hand.
+set -u
+
+TEMPLATE=/usr/local/share/alioth/monitors.xml
+CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/monitors.xml"
+SERIAL_RE='s/^(uint32 \([0-9][0-9]*\),.*/\1/p'
+CONNECTOR_RE="\('(DP|HDMI|DSI|eDP)-[0-9]+'"
+
+log() {
+    command -v logger >/dev/null 2>&1 && logger -t alioth-display-layout "$*"
+    printf '%s\n' "$*" >&2
+}
+
+[ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] || exit 0
+[ -n "${XDG_RUNTIME_DIR:-}" ] || exit 0
+
+get_state() {
+    gdbus call --session \
+        --dest org.gnome.Mutter.DisplayConfig \
+        --object-path /org/gnome/Mutter/DisplayConfig \
+        --method org.gnome.Mutter.DisplayConfig.GetCurrentState 2>/dev/null
+}
+
+stored_config_is_builtin_only() {
+    [ -f "$CONFIG_FILE" ] || return 0
+    total=$(grep -c '<connector>' "$CONFIG_FILE" 2>/dev/null || true)
+    builtin=$(grep -c '<connector>DSI-1</connector>' "$CONFIG_FILE" 2>/dev/null || true)
+    [ "${total:-0}" -gt 0 ] && [ "$total" = "${builtin:-0}" ]
+}
+
+# Refresh the stored config so the next session starts from Landscape Left.
+# Never replace a saved multi-monitor layout.
+if [ -f "$TEMPLATE" ] && stored_config_is_builtin_only; then
+    if ! cmp -s "$TEMPLATE" "$CONFIG_FILE"; then
+        install -Dm644 "$TEMPLATE" "$CONFIG_FILE"
+    fi
+fi
+
+apply_layout() {
+    state=$(get_state) || return 1
+    [ -n "$state" ] || return 1
+
+    case "$state" in
+        *"('DSI-1'"*) ;;
+        *) return 1 ;;
+    esac
+
+    # Refuse to replace a layout that includes an external display.
+    if printf '%s\n' "$state" | grep -oE "$CONNECTOR_RE" | grep -qv "'DSI-1'"; then
+        log "external display connected; leaving the layout unchanged"
+        return 2
+    fi
+
+    serial=$(printf '%s\n' "$state" | sed -n "$SERIAL_RE")
+    [ -n "$serial" ] || return 1
+
+    gdbus call --session \
+        --dest org.gnome.Mutter.DisplayConfig \
+        --object-path /org/gnome/Mutter/DisplayConfig \
+        --method org.gnome.Mutter.DisplayConfig.ApplyMonitorsConfig \
+        "$serial" 1 \
+        '[(0, 0, 1.6666666269302368, uint32 3, true, [("DSI-1", "1080x2400@120.000", @a{sv} {})])]' \
+        '{"layout-mode": <uint32 1>}' >/dev/null 2>&1 || return 1
+
+    # Re-read the state so a later startup config cannot silently undo this.
+    sleep 1
+    state=$(get_state) || return 1
+    printf '%s\n' "$state" | grep -q 'uint32 3, true'
+}
+
+attempt=1
+while [ "$attempt" -le 15 ]; do
+    apply_layout
+    status=$?
+    case "$status" in
+        0) log "Landscape Left applied"; exit 0 ;;
+        2) exit 0 ;;
+    esac
+    attempt=$((attempt + 1))
+    sleep 1
+done
+
+log "could not apply Landscape Left"
+exit 0

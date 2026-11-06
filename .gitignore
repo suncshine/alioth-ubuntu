@@ -14,6 +14,8 @@ alioth-debian/rootfs/
 
 # local tooling state
 .ccgui/
+__pycache__/
+*.pyc
 
 # internal development notes (kept locally, not published)
 /AGENTS.md

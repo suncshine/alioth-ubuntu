@@ -28,9 +28,9 @@ shasum -a 256 -c SHA256SUMS
 本次发布文件的 SHA-256：
 
 ```text
-ff25f6f89e93451a5221ff289189867aad24bac17978effb2a5d436093958904  alioth-debian.img.gz
-f7131234726e446bff28844f8e8d21ff8a1564bd8bf2984c66bdd486db741d53  boot-production-final.img
-96c3362110bd7f3b29c1520b41c11b5024d81570d7abe82e10d071d06b9af33a  alioth-debian.img（解压后的 raw，仅用于校验写盘）
+1dcb900005ab96b0e6040a117c2f009579f0d4513ff236a137856cd66f3896ee  alioth-debian.img.gz
+e1e1760f5b912da5d9b137488d0e9c3df3a32558122e19fdc9f37f9e610ea7e0  boot-production-final.img
+074a9d39703d868caf0a0a4a55c1117faaf79dd2bdeea8d03d0bbab0799c810c  alioth-debian.img（解压后的 raw，仅用于校验写盘）
 ```
 
 ## 1. 生成救援 SSH key
@@ -185,7 +185,7 @@ $SSH 'dd if=/dev/sda35 bs=4M count=4096 2>/dev/null | sha256sum'
 结果应等于：
 
 ```text
-96c3362110bd7f3b29c1520b41c11b5024d81570d7abe82e10d071d06b9af33a
+074a9d39703d868caf0a0a4a55c1117faaf79dd2bdeea8d03d0bbab0799c810c
 ```
 
 如果 initramfs 里没有 `sha256sum`，跳过这步；至少确认 `dd` 正常退出、没有
@@ -260,7 +260,13 @@ Ubuntu 覆盖。
   多台设备会相同。需要唯一地址可用
   `alioth-debian/scripts/06-bt-bdaddr.sh` 重新注入。
 - rootfs 第一次启动会生成自己的 SSH host key 和 machine-id；不同设备不会
-  共用。
+  共用。initramfs 里的 dropbear 也不带主机密钥，救援模式下由 `-R` 现场
+  生成。
+- 发布镜像不含构建机的 HTTP 代理配置：`/etc/environment` 只有 `PATH`，
+  没有 `/etc/apt/apt.conf.d/95proxy`，dconf 系统库里也没有代理键。
+  需要代理时自己配置。
+- 内置 Android 分区默认不在 GNOME 的 Dock/桌面显示（udev 规则把它们标成
+  udisks 忽略），外挂 USB 硬盘仍会正常出现。
 - 默认密码和 root SSH 是为了首次调试方便，不是长期配置。改密码后建议
   关闭 root 密码登录：编辑 `/etc/ssh/sshd_config.d/10-alioth-rescue.conf`
   或删除该文件，然后 `sudo systemctl restart ssh`。

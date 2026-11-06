@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Power button behaviour for alioth (Redmi K40 / POCO F3).
 
-Short press: lock the session and turn the internal panel off.  The next
-short press turns the panel back on and shows the lock screen.
+Short press: turn the internal panel off (and lock the session, unless the
+lock screen is disabled by org.gnome.desktop.lockdown disable-lock-screen).
+The next short press turns the panel back on.
 Long press (1.5 s, while still held): open GNOME's shutdown dialog.
 
 GNOME is told to ignore the power button itself
@@ -55,6 +56,8 @@ SESSION_MANAGER_NAME = "org.gnome.SessionManager"
 SESSION_MANAGER_PATH = "/org/gnome/SessionManager"
 SESSION_MANAGER_IFACE = "org.gnome.SessionManager"
 
+LOCKDOWN_SCHEMA = "org.gnome.desktop.lockdown"
+
 
 def log(message):
     print("powerkey: " + message, file=sys.stderr, flush=True)
@@ -78,6 +81,10 @@ class PowerKeyDaemon:
         self.noop_press = False
         self.long_fired = False
         self.long_timer = 0
+
+        # ScreenSaver.Lock never returns when disable-lock-screen is set
+        # (GNOME Shell waits for lock-screen-shown), so don't call it then.
+        self._lockdown = Gio.Settings.new(LOCKDOWN_SCHEMA)
 
         self._connect_session()
         self._try_open_device()
@@ -236,8 +243,11 @@ class PowerKeyDaemon:
             if self.mode != POWER_SAVE_ON:
                 self._set_mode(POWER_SAVE_ON)
         else:
-            log("short press: lock + blank")
-            self._lock_screen()
+            if self._lockdown.get_boolean("disable-lock-screen"):
+                log("short press: blank (screen lock disabled)")
+            else:
+                log("short press: lock + blank")
+                self._lock_screen()
             self._set_mode(POWER_SAVE_OFF)
 
     # -- input device -----------------------------------------------------
